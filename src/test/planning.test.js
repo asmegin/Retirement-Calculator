@@ -1,0 +1,66 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const E=require('../public/engine'),P=require('../public/planning-core');
+const near=(a,b,t=.02)=>assert.ok(Math.abs(a-b)<t,`${a} differs from ${b}`);
+function fixture(single=true){const c=E.defaultConfig();c.incomes.forEach((p,k)=>Object.assign(p,{name:'P'+k,birthYear:1961,salary:0,targetRetireAge:65,cppBaseAt65:0,oasBaseAt65:0,hbpAnnual:0,hbpYears:0,hooppStartAge:null,tfsaRoomOpening:0,rrspRoomOpening:0}));Object.assign(c.assumptions,{householdType:single?'single':'couple',targetDeathAge:70,inflation:0,desiredMonthlyIncome:0,gisEnabled:false,reinvestRefund:false,optimizeContributions:false,reinvestPayoffPayments:false,childcare:{childrenBirthYears:[],items:[]},spendingPhases:[{untilAge:999,factor:100}]});c.accounts=[];c.realEstate=[];c.dbPensions=[];return c;}
+const simulate=c=>E.simulate(c,{startYear:2026});
+test('category schedules replace flat target and have independent inflation and age windows',()=>{const c=fixture();Object.assign(c.assumptions,{spendingMode:'categories',desiredMonthlyIncome:10000,spendingCategories:[{name:'Travel',amount:1000,frequency:'monthly',startAge:65,endAge:66,inflation:5},{name:'Healthcare',amount:1200,frequency:'yearly',startAge:66,endAge:90,inflation:10}]});c.accounts=[{name:'Savings',owner:'P0',type:'TFSA',balance:300000,growthRate:0}];const r=simulate(c).years;near(r[0].spendTarget,12000);near(r[1].spendTarget,12600+1320);near(r[2].spendTarget,1452);near(r[0].unfunded,0);});
+test('irregular vehicle costs recur at their configured interval',()=>{const p=[{birthYear:1961}],items=[{name:'Car',amount:40000,frequency:'yearly',startAge:65,endAge:75,everyYears:5}];near(P.spendingForYear(items,p,2026,2026,0)[0].amount,40000);near(P.spendingForYear(items,p,2027,2026,0)[0].amount,0);near(P.spendingForYear(items,p,2031,2026,0)[0].amount,40000);});
+test('CPP historical ceilings, maximum base pension, dropout, enhancements, and history gaps',()=>{const p={birthYear:1961,birthMonth:1,cppStartAge:65,cppStartMonth:2,targetRetireAge:65,cppHistory:[]};for(let year=1979;year<=2026;year++)p.cppHistory.push({year,earnings:P.ympe(year)});let r=P.cppHistory(p,{startYear:2026,inflation:0});near(r.base,r.aympe/12*.25);assert.ok(r.enhanced>0);near(r.second,0);assert.equal(r.missingMonths,0);assert.ok(r.generalDropoutMonths>90);const q=P.cppHistory({...p,cppPlan:'QPP'},{startYear:2026,inflation:0});assert.ok(q.generalDropoutMonths<r.generalDropoutMonths);p.cppHistory=p.cppHistory.filter(r=>r.year!==1990);assert.equal(P.cppHistory(p,{startYear:2026}).missingMonths,12);});
+test('child-rearing low-income periods do not reduce base CPP versus ordinary zero earnings',()=>{const p={birthYear:1961,cppStartAge:65,targetRetireAge:65,cppHistory:[]};for(let year=1979;year<=2026;year++)p.cppHistory.push({year,earnings:year>=1983&&year<=1995?0:P.ympe(year)});const no=P.cppHistory(p,{startYear:2026,inflation:0});p.cppHistory.forEach(r=>{if(r.year>=1983&&r.year<=1995)r.caregiver=true;});const yes=P.cppHistory(p,{startYear:2026,inflation:0});assert.ok(yes.base>no.base);assert.ok(yes.caregiverDropoutMonths>0);});
+test('second enhanced CPP is earned only on earnings above YMPE from 2024',()=>{const p={birthYear:1961,cppStartAge:65,targetRetireAge:65,cppHistory:[{year:2023,earnings:100000},{year:2024,earnings:73200},{year:2025,earnings:81200}]};assert.ok(P.cppHistory(p,{startYear:2026,inflation:0}).second>0);p.cppHistory=p.cppHistory.filter(r=>r.year<2024);near(P.cppHistory(p,{startYear:2026,inflation:0}).second,0);});
+test('CSV import validates periods, accepts annual and monthly records, rejects duplicates',()=>{const r=P.parseEarningsCSV('year,month,earnings,caregiver\n2020,,50000,true\n2021,1,4000,false');assert.equal(r.length,2);assert.equal(r[0].caregiver,true);assert.throws(()=>P.parseEarningsCSV('year,earnings\n2020,10\n2020,20'),/Duplicate/);assert.throws(()=>P.parseEarningsCSV('year,month,earnings\n2020,13,10'),/Invalid/);});
+test('spousal rollover defers RRSP tax, survivor continues, final death includes full remaining RRIF',()=>{const c=fixture(false);c.assumptions.estate={enabled:true,spousalRollover:true,probateOverride:0};c.incomes[0].deathAge=65;c.incomes[1].deathAge=67;c.accounts=[{name:'RRSP',owner:'P0',type:'RRSP',balance:1000000,growthRate:0}];const r=simulate(c);assert.equal(r.years.length,3);near(r.years[0].terminalTax,0);assert.equal(r.estateEvents[0].rollover,true);near(r.estateEvents[1].terminalIncome,1000000);assert.ok(r.years[2].terminalTax>300000);near(r.finalNetWorth,1000000-r.years[2].terminalTax);});
+test('terminal property gain and historic CCA, registered inclusion, and probate reduce estate',()=>{const c=fixture();c.assumptions.estate={enabled:true,spousalRollover:false,probateOverride:1000};c.incomes[0].deathAge=65;c.accounts=[{name:'RRSP',owner:'P0',type:'RRSP',balance:100000,growthRate:0}];c.realEstate=[{name:'Rental',type:'rental',value:750000,appreciation:0,acb:500000,buildingAcb:500000,uccPool:420000,ccaEnabled:false}];const r=simulate(c);near(r.estateEvents[0].terminalIncome,305000);near(r.years[0].probateFees,1000);near(r.finalNetWorth,850000-r.years[0].terminalTax-1000);});
+test('probate follows provincial boundaries and flags unsupported provinces',()=>{near(P.probate(50000,'ON'),0);near(P.probate(50001,'ON'),15);near(P.probate(1000000,'ON'),14250);near(P.probate(100000,'BC'),1050);near(P.probate(300000,'AB'),525);near(P.probate(1000000,'QC'),0);assert.equal(P.probate(100000,'NS'),null);near(P.probate(100000,'NS',{probateOverride:900}),900);});
+test('CDA is tax-free, eligible distributions are constrained by GRIP, RDTOH refunds are bounded',()=>{const r=P.corporateDistribution(100000,{cda:30000,grip:20000,dividendType:'eligible',erdtoh:10000,nrdtoh:5000});near(r.capital,30000);near(r.eligible,20000);near(r.nonEligible,50000);near(r.taxable,20000*1.38+50000*1.15);near(r.refund,15000);});
+test('passive income reduces federal $500,000 business limit, not a $50,000 business limit',()=>{near(P.smallBusinessLimit(50000),500000);near(P.smallBusinessLimit(100000),250000);near(P.smallBusinessLimit(150000),0);});
+test('integrated corporate withdrawals draw CDA without taxing it or duplicating spendable cash',()=>{const c=fixture();c.assumptions.desiredMonthlyIncome=2000;c.accounts=[{name:'Holdco',owner:'P0',type:'CORP',balance:100000,growthRate:0,integratedCorporate:true,cdaOpening:40000,gripOpening:0,useCDA:true}];const r=simulate(c).years[0];near(r.taxableIncome[0],0);near(r.netCash,24000,1);assert.ok(r.accounts.find(a=>a.name==='Holdco').cda<17000);});
+test('mortgage prepayment reduces principal and is charged to household cash',()=>{const c=fixture();c.accounts=[{name:'Savings',owner:'P0',type:'TFSA',balance:100000,growthRate:0}];c.realEstate=[{name:'Home',type:'principal',value:300000,mortgage:100000,interestRate:4,paymentMonthly:1000,extraPaymentAnnual:10000,extraPaymentStart:2026,extraPaymentEnd:2026}];const r=simulate(c).years[0];near(r.extraDebtPayments,10000);near(r.spendTarget,10000);assert.ok(r.discretionaryDraw>=10000);const schedule=E.buildSchedule(E.normalizeConfig(c).realEstate[0],2026,2036);near(schedule.byYear[2027].extraPayment,0);});
+test('Smith borrowing creates equal investment assets and debt, and interest starts on opening balance',()=>{const c=fixture();c.realEstate=[{name:'Home',type:'principal',value:300000,mortgage:100000,interestRate:0,paymentMonthly:1000,payoffYear:2035,smithEnabled:true,smithRate:6,smithLimit:20000,smithGrowthRate:0,smithOwner:'P0'}];const r=simulate(c).years;near(r[0].smithDebt,r[0].smithAdvance);near(r[0].smithInterest,0);near(r[1].smithInterest,r[0].smithDebt*.06);assert.ok(r[2].smithDebt<=20000);});
+test('replacement home is not free: purchase consumes sale proceeds and preserves only the difference',()=>{const c=fixture();c.incomes[0].deathAge=65;c.assumptions.targetDeathAge=65;c.accounts=[{name:'TFSA',owner:'P0',type:'TFSA',balance:0,growthRate:0}];c.realEstate=[{name:'Home',type:'principal',value:1000000,appreciation:0,saleYear:2026,sellingCostPct:0},{name:'Smaller home',type:'principal',value:500000,appreciation:0,purchaseYear:2026}];const r=simulate(c).years[0];near(r.spendTarget,500000);near(r.principalEquity,500000);near(r.netWorth,1000000);near(r.portfolio,500000);});
+test('bounded withdrawal optimization does not mutate inputs or worsen a funded baseline',()=>{const c=fixture();c.assumptions.desiredMonthlyIncome=3000;c.accounts=[{name:'RRSP',owner:'P0',type:'RRSP',balance:500000,growthRate:0},{name:'TFSA',owner:'P0',type:'TFSA',balance:100000,growthRate:0}];const before=JSON.stringify(c),r=E.optimizeWithdrawals(c,{startYear:2026,maxEvaluations:50});assert.equal(JSON.stringify(c),before);assert.equal(r.globalOptimum,false);assert.ok(r.evaluated<=50);assert.equal(r.result.depletedYear,null);assert.ok(r.taxSavings>=-1);});
+
+test('2026 payroll uses published CPP/QPP rates, YMPE and second ceiling',()=>{
+  near(E.payrollCPP(100000,50,1,'ON',2026,0).total,4646.45);
+  near(E.payrollCPP(100000,50,1,'QC',2026,0).total,4895.3);
+  near(E.payrollCPP(100000,73,1,'QC',2026,0).total,0);
+});
+test('CSV rejects overlapping annual and monthly data and invalid ceilings',()=>{
+  assert.throws(()=>P.parseEarningsCSV('year,month,earnings\n2020,,12000\n2020,1,1000'),/overlapping/);
+  assert.throws(()=>P.parseEarningsCSV('year,earnings,ympe\n2020,12000,-1'),/Invalid/);
+  assert.throws(()=>P.parseEarningsCSV(''),/CSV needs/);
+});
+test('same-year deaths tax both ownership shares of rental gains and recapture',()=>{
+  const c=fixture(false);c.assumptions.estate={enabled:true,spousalRollover:true,probateOverride:0};
+  c.incomes.forEach(p=>p.deathAge=65);
+  c.realEstate=[{name:'Rental',type:'rental',value:750000,appreciation:0,acb:500000,buildingAcb:500000,uccPool:420000,ccaEnabled:false,ownerSplit:50}];
+  const r=simulate(c);near(r.estateEvents.reduce((s,e)=>s+e.terminalIncome,0),205000);
+  near(r.years[0].taxableIncome[0],102500);near(r.years[0].taxableIncome[1],102500);
+  near(r.years[0].person.reduce((s,p)=>s+p.tax+p.clawback,0),r.years[0].totalTax);
+});
+test('survivor income follows the correct person after either spouse dies',()=>{
+  for(const deceased of [0,1]){
+    const c=fixture(false);c.assumptions.estate={enabled:true,spousalRollover:true,probateOverride:0};
+    c.incomes.forEach((p,k)=>Object.assign(p,{deathAge:k===deceased?65:67,cppBaseAt65:1000,oasBaseAt65:700}));
+    const r=simulate(c).years[1];assert.equal(r.person.length,1);assert.equal(r.person[0].name,'P'+(1-deceased));near(r.person[0].cpp,12000);near(r.person[0].oas,8400);
+  }
+});
+test('operating corporation pays remuneration from profit or existing assets and applies GRIP/refunds',()=>{
+  const c=fixture();c.incomes[0].birthYear=1976;c.incomes[0].targetRetireAge=65;
+  Object.assign(c.incomes[0],{salary:60000,eligibleDividends:10000,nonEligibleDividends:10000});
+  c.accounts=[{name:'Business',owner:'P0',type:'CORP',balance:100000,growthRate:0,integratedCorporate:true,businessIncome:100000,businessSmallRate:12.2,gripOpening:5000,nrdtohOpening:1000}];
+  const r=simulate(c).years[0],corp=r.accounts.find(a=>a.name==='Business');
+  const profit=100000-60000-r.person[0].payrollCPP;
+  near(corp.operatingTax,profit*.122);near(corp.contrib,profit-profit*.122-20000);
+  near(r.person[0].eligibleDividends,5000);near(r.person[0].nonEligibleDividends,15000);near(corp.grip,0);near(corp.corporateRefund,1000);
+  near(r.corporateInvestmentTax,-1000);
+  c.accounts[0].businessIncome=1000;c.accounts[0].balance=0;
+  assert.ok(simulate(c).years[0].unfunded>79000);
+  c.accounts.push({...c.accounts[0],name:'Duplicate business'});assert.throws(()=>simulate(c),/one operating/);
+});
+test('Smith investment portfolio does not replace an existing taxable account return assumption',()=>{
+  const c=fixture();c.accounts=[{name:'Existing savings',owner:'P0',type:'TAXABLE',balance:100000,growthRate:10}];
+  c.realEstate=[{name:'Home',type:'principal',value:300000,mortgage:100000,interestRate:0,paymentMonthly:1000,smithEnabled:true,smithLimit:20000,smithGrowthRate:0,smithOwner:'P0'}];
+  const r=simulate(c).years[0];near(r.accounts.find(a=>a.name==='Existing savings').growth,10000);assert.ok(r.accounts.filter(a=>a.type==='TAXABLE').length>=2);
+});

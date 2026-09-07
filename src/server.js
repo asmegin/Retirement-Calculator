@@ -220,6 +220,7 @@ app.get('/api/projection', async (req, res) => {
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/config', (req, res) => res.sendFile(path.join(__dirname, 'public', 'config.html')));
+app.get('/planning', (req, res) => res.sendFile(path.join(__dirname, 'public', 'planning.html')));
 
 io.on('connection', async socket => {
   try { socket.emit('config_updated', await loadConfig()); }

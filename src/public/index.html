@@ -2,11 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script src="/theme.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Lifecycle Drawdown Engine</title>
 <script src="/socket.io/socket.io.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="/engine.js?v=4"></script>
+<script src="/planning-core.js"></script>
+<script src="/engine.js?v=5"></script>
+<script src="/help.js"></script>
+<link rel="stylesheet" href="/help.css">
 <style>
   :root{
     --bg:#0b1329; --panel:#16223f; --panel2:#0f1a33; --line:rgba(255,255,255,.06);
@@ -73,11 +77,12 @@
   dialog::backdrop{background:rgba(0,0,0,.75)}
   @media print{.tabs,.controls,.btn,.header a{display:none}.panel{display:block!important}.panel[hidden]{display:block!important}}
 </style>
+<link rel="stylesheet" href="/theme.css">
 </head>
 <body>
 
 <div class="header">
-  <h1>Lifecycle Drawdown Engine</h1>
+  <h1>Your retirement, in focus</h1>
   <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
     <span class="toggle"><input type="checkbox" id="real-toggle" checked><label for="real-toggle" style="cursor:pointer">Today's dollars</label></span>
     <button class="btn ghost" onclick="exportCsv()">Export ledger</button>
@@ -101,7 +106,14 @@
 </div>
 
 <div class="card">
-  <div class="controls">
+  <section class="card" aria-labelledby="planner-title" style="margin:1rem 0;padding:1.2rem;border:1px solid #334155;border-radius:12px;background:var(--panel)">
+  <h2 id="planner-title" style="margin-top:0;font-size:1.2rem">When can we retire?</h2>
+  <p id="planner-status" role="status" aria-live="polite">Enter a spending goal to explore retirement ages.</p>
+  <p id="planner-context" style="color:var(--muted)"></p>
+  <div style="display:flex;gap:.6rem;flex-wrap:wrap"><button class="btn" id="planner-apply" hidden>Use these retirement ages</button><button class="btn ghost" id="planner-both">Find ages for both</button><a class="btn ghost" href="/config#pensions">Edit pensions</a></div>
+  <p style="color:var(--muted);font-size:.8rem">Move either retirement slider to hold that age fixed and recalculate the other. Searches whole years from today through age 75 (before the plan ends); past retirement dates stay fixed. Uses your market assumption, taxes, contributions and spending phases. A funded projection is an estimate, not a guarantee. Pension start ages stay as entered unless linked to retirement.</p>
+</section>
+<div class="controls">
     <div class="ctl">
       <label class="title" id="lbl-p1">Person 1 retirement age: <span id="p1-age-val" style="color:var(--accent);font-size:1.3rem">55</span></label>
       <input type="range" id="p1-slider" min="40" max="75" value="55" aria-label="Person 1 retirement age">
@@ -110,7 +122,7 @@
     <div class="ctl">
       <label class="title" id="lbl-p2">Person 2 retirement age: <span id="p2-age-val" style="color:var(--accent);font-size:1.3rem">55</span></label>
       <input type="range" id="p2-slider" min="40" max="75" value="55" aria-label="Person 2 retirement age">
-      <div class="pick"><label>CPP</label><select id="p2-cpp"></select><label>OAS</label><select id="p2-oas"></select><label>HOOPP</label><select id="p2-hoopp"></select></div>
+      <div class="pick"><label>CPP</label><select id="p2-cpp"></select><label>OAS</label><select id="p2-oas"></select></div>
     </div>
     <div class="ctl">
       <label class="title">After-tax spending: <span id="spend-val" style="color:var(--accent);font-size:1.3rem">$0</span>/mo</label>
@@ -286,15 +298,13 @@ function fillSelect(sel, from, to) {
 }
 fillSelect(el('p1-cpp'), 60, 70); fillSelect(el('p2-cpp'), 60, 70);
 fillSelect(el('p1-oas'), 65, 70); fillSelect(el('p2-oas'), 65, 70);
-fillSelect(el('p2-hoopp'), 50, 70);
-el('p2-hoopp').prepend(new Option('None', ''));
 
-['p1-cpp','p2-cpp','p1-oas','p2-oas','p2-hoopp','strategy','return-mode','rrsp-floor']
+['p1-cpp','p2-cpp','p1-oas','p2-oas','strategy','return-mode','rrsp-floor']
   .forEach(id => el(id).addEventListener('change', onStateChange));
 el('toggle-lines').addEventListener('change', () => charts.traj && charts.traj.update());
 el('real-toggle').addEventListener('change', () => run());
-el('p1-slider').addEventListener('input', e => { el('p1-age-val').textContent = e.target.value; onStateChange(); });
-el('p2-slider').addEventListener('input', e => { el('p2-age-val').textContent = e.target.value; onStateChange(); });
+el('p1-slider').addEventListener('input', e => { el('p1-age-val').textContent = e.target.value; plannerFixed=0; onStateChange(); });
+el('p2-slider').addEventListener('input', e => { el('p2-age-val').textContent = e.target.value; plannerFixed=1; onStateChange(); });
 el('spend-slider').addEventListener('input', e => { el('m-goal').value = e.target.value; el('spend-val').textContent = fmt(e.target.value); onStateChange(); });
 el('m-goal').addEventListener('change', e => { const v = Math.max(0, +e.target.value || 0); e.target.value = v; el('spend-slider').value = v; el('spend-val').textContent = fmt(v); onStateChange(); });
 
@@ -304,17 +314,20 @@ fetch('/api/config').then(r=>{if(!r.ok)throw new Error('Could not load configura
 
 function syncControls() {
   const P = config.incomes;
+  if(config.assumptions.spendingMode==='categories')config.assumptions.desiredMonthlyIncome=PlanningCore.spendingBaseline(config.assumptions.spendingCategories)/12;
+  [0,1].forEach(k=>{fillSelect(el('p'+(k+1)+'-cpp'),60,P[k].cppPlan==='QPP'?72:70);});
   document.body.classList.toggle('single-household',isSingle());
   el('p2-slider').closest('.ctl').hidden=isSingle();
   ['ch-p2-tax','ch-p2-mr'].forEach(id=>el(id).hidden=isSingle());
   el('household-summary').textContent = `${isSingle()?'Single':'Couple'} | ${E.PROVINCES[config.assumptions.province].name} | Tax schedules: 2025 base, projected with inflation. GIS and corporate tax are planning estimates.`;
   el('lbl-p1').childNodes[0].nodeValue = P[0].name + ' retirement age: ';
   el('lbl-p2').childNodes[0].nodeValue = P[1].name + ' retirement age: ';
+  el('p1-slider').min = Math.min(P[0].targetRetireAge,new Date().getFullYear()-P[0].birthYear); el('p1-slider').max=Math.max(75,P[0].targetRetireAge);
   el('p1-slider').value = P[0].targetRetireAge; el('p1-age-val').textContent = P[0].targetRetireAge;
+  el('p2-slider').min = Math.min(P[1].targetRetireAge,new Date().getFullYear()-P[1].birthYear); el('p2-slider').max=Math.max(75,P[1].targetRetireAge);
   el('p2-slider').value = P[1].targetRetireAge; el('p2-age-val').textContent = P[1].targetRetireAge;
   el('p1-cpp').value = P[0].cppStartAge; el('p2-cpp').value = P[1].cppStartAge;
   el('p1-oas').value = P[0].oasStartAge; el('p2-oas').value = P[1].oasStartAge;
-  el('p2-hoopp').value = P[1].hooppStartAge || '';
   el('strategy').value = config.assumptions.withdrawalStrategy;
   el('return-mode').value = ['conservative','bad-decade'].includes(config.assumptions.returnMode) ? config.assumptions.returnMode : 'deterministic';
   /* keep any custom floor set on the config page selectable here */
@@ -326,6 +339,7 @@ function syncControls() {
     floorSel.appendChild(o);
   }
   floorSel.value = floor;
+  el('spend-slider').min=0; el('spend-slider').max=Math.max(25000,config.assumptions.desiredMonthlyIncome);
   el('spend-slider').value = config.assumptions.desiredMonthlyIncome;
   el('m-goal').value = Math.round(config.assumptions.desiredMonthlyIncome);
   el('spend-val').textContent = fmt(config.assumptions.desiredMonthlyIncome);
@@ -337,23 +351,77 @@ function syncControls() {
 
 function onStateChange() {
   if (!config) return;
+  delete config.assumptions.withdrawalPlan;
   config.incomes[0].targetRetireAge = +el('p1-slider').value;
   if (!isSingle()) config.incomes[1].targetRetireAge = +el('p2-slider').value;
   config.incomes[0].cppStartAge = +el('p1-cpp').value;
   if (!isSingle()) config.incomes[1].cppStartAge = +el('p2-cpp').value;
   config.incomes[0].oasStartAge = +el('p1-oas').value;
   if (!isSingle()) config.incomes[1].oasStartAge = +el('p2-oas').value;
-  if (!isSingle()) config.incomes[1].hooppStartAge = el('p2-hoopp').value === '' ? null : +el('p2-hoopp').value;
   config.assumptions.withdrawalStrategy = el('strategy').value;
   config.assumptions.returnMode = el('return-mode').value;
   config.assumptions.rrspMinMarginalRate = +el('rrsp-floor').value;
-  config.assumptions.desiredMonthlyIncome = Math.max(0, +el('m-goal').value || 0);
+  const newGoal=Math.max(0,+el('m-goal').value||0);
+  if(config.assumptions.spendingMode==='categories'){const previous=PlanningCore.spendingBaseline(config.assumptions.spendingCategories)/12;if(previous>0)config.assumptions.spendingCategories.forEach(c=>c.amount*=newGoal/previous);}
+  config.assumptions.desiredMonthlyIncome = newGoal;
   run();
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(config)});
   }, 450);
 }
+
+let plannerFixed=null, plannerWorker=null, plannerTimer=null, plannerId=0, plannerResult=null;
+function schedulePlanner() {
+  clearTimeout(plannerTimer); if(plannerWorker) {plannerWorker.terminate();plannerWorker=null;}
+  const id=++plannerId;plannerResult=null;el('planner-apply').hidden=true;
+  if(isSingle()) plannerFixed=null;
+  el('planner-both').hidden=isSingle();
+  el('planner-status').textContent='Checking retirement ages for '+fmt(config.assumptions.desiredMonthlyIncome)+'/month?';
+  el('planner-context').textContent=plannerFixed===null ? 'Find the earliest year by which everyone can retire; among ties, minimize total years worked.' :
+    'Holding '+config.incomes[plannerFixed].name+' at age '+config.incomes[plannerFixed].targetRetireAge+'. Finding the other person?s earliest feasible retirement.';
+  plannerTimer=setTimeout(()=>{
+    try {
+      plannerWorker=new Worker('/planner-worker.js');
+      plannerWorker.onmessage=event=>{
+        if(event.data.id!==plannerId||!plannerWorker)return;
+        const {result,error,tested,total}=event.data;
+        if(error){el('planner-status').textContent='Could not calculate retirement ages: '+error;plannerWorker.terminate();plannerWorker=null;return;}
+        if(!result){el('planner-status').textContent='Checking retirement ages? '+tested+' of '+total+' combinations tested.';return;}
+        plannerWorker.terminate();plannerWorker=null;plannerResult=result;
+        if(result.found) {
+          const count=isSingle()?1:2;
+          const people=config.incomes.slice(0,count).map((p,k)=>p.name+' can retire at '+result.ages[k]+' ('+result.years[k]+')');
+          el('planner-status').textContent='To fund '+fmt(result.goal)+'/month: '+people.join('; ')+'.';
+          el('planner-apply').hidden=result.ages.slice(0,count).every((age,k)=>age===config.incomes[k].targetRetireAge);
+        } else {
+          el('planner-status').textContent='No funded retirement combination found through age '+result.maxAge+' with these settings. '+(plannerFixed!==null ? 'Try ?Find ages for both?, ' : 'Try ')+ 'a lower spending goal, more savings, or revised pension estimates.';
+        }
+      };
+      plannerWorker.onerror=()=>{if(id!==plannerId||!plannerWorker)return;el('planner-status').textContent='Retirement search failed. Reload the page to try again.';plannerWorker.terminate();plannerWorker=null;};
+      plannerWorker.postMessage({id,config:structuredClone(config),fixedPerson:plannerFixed});
+    } catch(error) {el('planner-status').textContent='Retirement search is unavailable in this browser: '+error.message;}
+  },300);
+}
+el('planner-both').onclick=()=>{plannerFixed=null;schedulePlanner();};
+el('planner-apply').onclick=()=>{
+  if(!plannerResult?.found)return;
+  plannerResult.ages.slice(0,isSingle()?1:2).forEach((age,k)=>config.incomes[k].targetRetireAge=age);
+  syncControls();onStateChange();
+};
+const dashboardHelp={
+  'real-toggle':'Show projected money in today?s purchasing power. Turn off to show the actual dollar amounts expected in each future year.',
+  'm-goal':SettingHelp.text.desiredMonthlyIncome,
+  'p1-slider':SettingHelp.text.targetRetireAge,'p2-slider':SettingHelp.text.targetRetireAge,
+  'p1-cpp':SettingHelp.text.cppStartAge,'p2-cpp':SettingHelp.text.cppStartAge,
+  'p1-oas':SettingHelp.text.oasStartAge,'p2-oas':SettingHelp.text.oasStartAge,
+  'spend-slider':SettingHelp.text.desiredMonthlyIncome,'strategy':SettingHelp.text.withdrawalStrategy,
+  'return-mode':SettingHelp.text.returnMode,'rrsp-floor':SettingHelp.text.rrspMinMarginalRate,
+  'toggle-lines':'Show vertical markers on the portfolio chart when a debt is calculated to be paid off.',
+  'mc-runs':SettingHelp.text.mcRuns,'mc-vol':SettingHelp.text.mcVolatility,
+  'scenario-name':'Give this saved set of assumptions a name, such as Retire at 60. Saved scenarios can be compared against the current plan.'
+};
+Object.entries(dashboardHelp).forEach(([id,text])=>SettingHelp.attach(el(id),text));
 
 /* ---------------------------------------------------------------- charts */
 Chart.register({
@@ -383,6 +451,7 @@ const baseOpts = () => ({
     tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.parsed.y)}} },
   scales:{ x:axisX, y:axisMoney }
 });
+window.addEventListener('themechange',()=>{const dark=document.documentElement.dataset.theme==='dark';Chart.defaults.color=dark?'#a6b1c6':'#69758a';Object.values(charts).forEach(chart=>{Object.values(chart.options.scales||{}).forEach(axis=>{if(axis.ticks)axis.ticks.color=Chart.defaults.color;if(axis.grid)axis.grid.color=dark?'#344058':'#e3e7ef';});chart.update('none');});});
 function upsert(key, canvasId, cfg) {
   if (isSingle()) cfg.data.datasets = cfg.data.datasets.filter(d=>!d.person2);
   if (charts[key]) charts[key].destroy();
@@ -392,6 +461,7 @@ function upsert(key, canvasId, cfg) {
 /* ------------------------------------------------------------------ run */
 function run() {
   if (!config) return;
+  schedulePlanner();
   sim = E.simulate(config);
   const years = sim.years;
   const labels = years.map(r => r.year);
@@ -474,7 +544,7 @@ function run() {
       { label:'RRIF minimum', data: years.map(r=>D(r.rrifForced,r)), backgroundColor:'#0ea5e9', stack:'i' },
       { label:'Portfolio draw', data: years.map(r=>D(r.discretionaryDraw,r)), backgroundColor:'#38bdf8', stack:'i' },
       { label:'Total tax', type:'line', data: years.map(r=>D(r.totalTax,r)), borderColor:'#ef4444', borderDash:[5,4], pointRadius:0, tension:.1 },
-      { label:'Spending goal', type:'line', data: years.map(r=>D(r.spendTarget,r)), borderColor:'#f8fafc', pointRadius:0, tension:.1, borderWidth:2 }
+      { label:'Spending goal', type:'line', data: years.map(r=>D(r.spendTarget,r)), borderColor:document.documentElement.dataset.theme==='dark'?'#edf1fa':'#202b43', pointRadius:0, tension:.1, borderWidth:2 }
     ]},
     options: Object.assign(baseOpts(), { scales:{ x:Object.assign({stacked:true}, axisX), y:Object.assign({stacked:true}, axisMoney) } })
   });
@@ -593,6 +663,7 @@ function showYear(y) {
       else {
         if (s.capitalLoss > 0) h += `<div class="modal-row"><span style="padding-left:1rem;color:#fca5a5">Capital loss ${fmt(s.capitalLoss)} — offsets capital gains only, not income</span><span></span></div>`;
         else h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Capital gain ${fmt(s.capitalGain)}, half taxable</span><span style="color:#fca5a5">${fmt(s.taxableGain)}</span></div>`;
+        if (s.terminalLoss > 0) h += `<div class="modal-row"><span>Terminal loss (income deduction)</span><span>${fmt(s.terminalLoss)}</span></div>`;
         if (s.ccaRecapture > 0) h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">CCA recapture (fully taxable)</span><span style="color:#fca5a5">${fmt(s.ccaRecapture)}</span></div>`;
       }
     });
@@ -601,17 +672,20 @@ function showYear(y) {
   h += `<div class="modal-header">Income and tax by person</div>`;
   r.person.forEach((p, i) => {
     h += `<div class="modal-row"><span style="font-weight:700">${p.name}</span><span class="pill">marginal ${pct(r.marginalRates[i])}</span></div>`;
-    [['Employment',p.employment],['Eligible dividends',p.eligibleDividends],['Non-eligible dividends',p.nonEligibleDividends],['GIS',p.gis],['CPP/QPP contributions',-p.payrollCPP],['CPP',p.cpp],['OAS',p.oas],['DB lifetime',p.pension - p.pension2],['Other pension',p.pension2],['DB bridge',p.bridge],['RRIF minimum',p.rrif],['Rental income',p.rental],['Sale income',p.sale]]
+    [['Employment',p.employment],['Eligible dividends',p.eligibleDividends],['Non-eligible dividends',p.nonEligibleDividends],['GIS',p.gis],['CPP/QPP contributions',-p.payrollCPP],['CPP',p.cpp],['OAS',p.oas],['DB lifetime',p.pension - p.pension2],['Other pension',p.pension2],['DB bridge',p.bridge],['RRIF minimum',p.rrif],['Rental income',p.rental],['Sale income',p.sale],['Unpaid HBP (taxable, no cash)',p.hbpShortfall]]
       .filter(x => Math.abs(x[1]) > 1)
       .forEach(x => h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">${x[0]}</span><span style="color:var(--green)">${fmt(x[1])}</span></div>`);
     if (p.childcare > 1) h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Childcare deduction</span><span style="color:var(--accent)">-${fmt(p.childcare)}</span></div>`;
     if (p.deductible > 1) h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">RRSP deduction</span><span style="color:var(--accent)">-${fmt(p.deductible)}</span></div>`;
     h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Income tax</span><span style="color:#fca5a5">-${fmt(p.tax)}</span></div>`;
+    h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Federal / provincial tax</span><span>${fmt(p.federalTax)} / ${fmt(p.provincialTax)}</span></div>`;
+    if(p.federalAgeAmount > 0) h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Federal age amount (before credit rate)</span><span>${fmt(p.federalAgeAmount)}</span></div>`;
     if (p.clawback > 1) h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">OAS recovery tax</span><span style="color:#fca5a5">-${fmt(p.clawback)}</span></div>`;
     h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Room remaining (RRSP / TFSA)</span><span>${fmt(p.rrspRoom)} / ${fmt(p.tfsaRoom)}</span></div>`;
   });
   if (Math.abs(r.pensionSplit) > 1)
     h += `<div class="modal-row"><span>Pension income split to ${r.pensionSplit > 0 ? P[1].name : P[0].name}</span><span>${fmt(Math.abs(r.pensionSplit))}</span></div>`;
+  if(config.assumptions.province==='QC') h += `<div class="modal-row"><span>Quebec pension income split</span><span>${fmt(Math.abs(r.provincialPensionSplit))}</span></div>`;
   if (r.refund > 1)
     h += `<div class="modal-row"><span>Refund generated, reinvested next year</span><span style="color:var(--violet)">${fmt(r.refund)}</span></div>`;
   if (r.childcareClaim > 0 && r.childcareClaim < r.childcareSpend)
@@ -673,7 +747,7 @@ function renderTimeline() {
 /* ------------------------------------------------------------------ CSV */
 function exportCsv() {
   if (!sim) return;
-  const cols = ['year','age1','age2','employment','cpp','oas','hoopp','other_pension','rental_cash','rental_taxable','cca_claimed',
+  const cols = ['year','age1','age2','employment','cpp','oas','db_pension','other_pension','rental_cash','rental_taxable','cca_claimed',
     'rrif_minimum','portfolio_draw','rrsp_target','rrsp_contrib','tfsa_contrib','employer_contrib','hbp_repayment','refund',
     'childcare_claim','marginal_1','marginal_2','income_tax','oas_clawback','after_tax_cash','spending_goal','shortfall',
     'sale_proceeds','investments','home_equity','rental_equity','debt','net_worth','deflator','gis','dividends','cpp_qpp_contributions','fhsa_qualifying_withdrawal'];
@@ -751,7 +825,7 @@ function compareScenario(s) {
   scenarioSims[s.name] = E.simulate(s.config);
   const palette = ['#38bdf8','#f97316','#a78bfa','#22c55e','#ef4444','#eab308'];
   const pick = r => real() ? r.netWorth * r.deflator : r.netWorth;
-  const datasets = [{ label:'Current plan', data: sim.years.map(r=>({x:r.year,y:pick(r)})), borderColor:'#f8fafc', borderWidth:3, pointRadius:0, tension:.1 }];
+  const datasets = [{ label:'Current plan', data: sim.years.map(r=>({x:r.year,y:pick(r)})), borderColor:document.documentElement.dataset.theme==='dark'?'#edf1fa':'#202b43', borderWidth:3, pointRadius:0, tension:.1 }];
   Object.keys(scenarioSims).forEach((k,i) => datasets.push({
     label:k, data: scenarioSims[k].years.map(r=>({x:r.year,y:pick(r)})),
     borderColor: palette[i % palette.length], pointRadius:0, tension:.1

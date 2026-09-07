@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script src="/theme.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Engine configuration</title>
 <style>
@@ -34,6 +35,7 @@
   [hidden]{display:none!important}
   body.wizard-only>.nav,body.wizard-only>.notice,body.wizard-only>#editor{display:none}
 </style>
+<link rel="stylesheet" href="/theme.css">
 </head>
 <body>
 <div class="nav">
@@ -62,6 +64,9 @@
 </dialog>
 <div class="toast" id="toast"></div>
 
+<link rel="stylesheet" href="/help.css">
+<script src="/help.js"></script>
+<script src="/planning-core.js"></script>
 <script src="/engine.js"></script>
 <script>
 const E = window.RetireEngine;
@@ -70,7 +75,7 @@ let config = {};
 const schema = {
   incomes: {
     title: 'People',
-    note: 'CPP and OAS amounts are what you would receive at 65 in today\'s dollars — the engine applies the early or late adjustment, the 10% lift at 75, and inflation indexing itself. RRSP and TFSA room are your current unused amounts from your CRA notice of assessment; the engine accrues new room each year from your salary and subtracts any employer DPSP pension adjustment. HBP repayments are mandatory and give no deduction.',
+    note: 'CPP and OAS amounts are what you would receive at 65 in today\'s dollars — the engine applies the early or late adjustment, the 10% lift at 75, and inflation indexing itself. RRSP and TFSA room are your current unused amounts from your CRA notice of assessment; the engine accrues new room each year from your salary and subtracts any employer DPSP pension adjustment. Set the required HBP payment and your actual repayment budget separately. Unpaid amounts are taxable RRSP income and give no cash or deduction.',
     fixed: 2,
     fields: [
       {key:'name', label:'Name', type:'text'},
@@ -92,15 +97,12 @@ const schema = {
       {key:'cppStartAge', label:'CPP start age', type:'select', options:[60,61,62,63,64,65,66,67,68,69,70]},
       {key:'oasBaseAt65', label:'OAS at 65 ($/mo)', type:'number'},
       {key:'oasStartAge', label:'OAS start age', type:'select', options:[65,66,67,68,69,70]},
-      {key:'hooppStartAge', label:'HOOPP start age (blank = none)', type:'number'},
       {key:'rrspRoomOpening', label:'Unused RRSP room', type:'number'},
       {key:'tfsaRoomOpening', label:'Unused TFSA room', type:'number'},
       {key:'hbpAnnual', label:'HBP repayment /yr', type:'number'},
       {key:'hbpYears', label:'HBP years remaining', type:'number'},
-      {key:'pension2Name', label:'Other pension name', type:'text'},
-      {key:'pension2Amount', label:'Other pension $/mo', type:'number', step:'0.01'},
-      {key:'pension2StartAge', label:'Other pension start age', type:'number'},
-      {key:'pension2IndexRate', label:'Other pension indexing %/yr', type:'number', step:'0.1'}
+      {key:'hbpRepaymentBudget', label:'Planned HBP repayment /yr', type:'number'},
+      {key:'rrifConversionAge', label:'RRSP to RRIF conversion age', type:'number'}
     ]
   },
   accounts: {
@@ -111,7 +113,8 @@ const schema = {
       {key:'owner', label:'Owner', type:'owner'},
       {key:'type', label:'Type', type:'select', options:['RRSP','TFSA','FHSA','TAXABLE','CORP','DC']},
       {key:'balance', label:'Balance', type:'number'},
-      {key:'corporateTaxRate', label:'CORP effective tax on returns %', type:'number', hint:'Use an effective rate reflecting your investment mix and refunds. Corporate tax accounts (RDTOH, CDA, GRIP) are not tracked.'},
+      {key:'corporateTaxRate', label:'CORP effective tax on returns %', type:'number', hint:'Use an effective rate reflecting your investment mix and refunds. Enable detailed CDA, GRIP and RDTOH tracking in the planning workspace.'},
+      {key:'distributionType',label:'Non-registered distribution income',type:'select',options:['interest','eligible','non-eligible']},
       {key:'dividendType', label:'CORP distribution type', type:'select', options:['eligible','non-eligible']},
       {key:'qualifyingWithdrawalYear', label:'FHSA qualifying home purchase year (0 = none)', type:'number'},
       {key:'qualifyingWithdrawalAmount', label:'FHSA qualifying withdrawal (0 = full balance)', type:'number'},
@@ -154,6 +157,8 @@ const schema = {
       {key:'annualMaintenance', label:'Maintenance /yr', type:'number'},
       {key:'otherAnnualInterest', label:'Other deductible interest /yr', type:'number'},
       {key:'acb', label:'ACB (price + improvements)', type:'number'},
+      {key:'buildingAcb',label:'Building cost excluding land',type:'number'},
+      {key:'buildingSalePercent',label:'Building share of sale proceeds %',type:'number'},
       {key:'saleYear', label:'Sale year (0 = never)', type:'number'},
       {key:'sellingCostPct', label:'Selling costs %', type:'number', step:'0.1'},
       {key:'uccPool', label:'CCA pool remaining (UCC)', type:'number'},
@@ -164,32 +169,25 @@ const schema = {
     ]
   },
   dbPensions: {
-    title:'Defined benefit pensions',
-    note:'Add any number of DB plans. Amounts are monthly at commencement; indexing applies after commencement unless selected. Legacy HOOPP and Other pension entries remain additive. Enter the pension adjustment under People. DC accounts model pooled pension savings; jurisdiction-specific locked-in withdrawal limits are not applied.',
+    title:'Pensions (optional)',
+    note:'Add a workplace pension only if you have one. Enter the monthly lifetime amount from your pension statement, then any temporary bridge and annual increases. You can link commencement to retirement and add estimates for different start ages. For a defined contribution (DC) plan, add its balance under Investment accounts. Existing HOOPP estimates appear here as a named plan.',
     fields:[
       {key:'name',label:'Plan name',type:'text'}, {key:'owner',label:'Member',type:'owner'},
       {key:'startAge',label:'Start age',type:'number'}, {key:'lifetime',label:'Lifetime pension /mo',type:'number'},
       {key:'bridge',label:'Bridge /mo',type:'number'}, {key:'bridgeCutoffAge',label:'Bridge ends at age',type:'number'},
       {key:'indexingRate',label:'Indexing %/yr',type:'number',step:'0.1'},
-      {key:'indexBeforeStart',label:'Index amounts before commencement',type:'checkbox'}
+      {key:'indexBeforeStart',label:'Index amounts before commencement',type:'checkbox'},
+      {key:'followsRetirement',label:'Start when member retires',type:'checkbox'}
     ]
   },
-  hooppTiers: {
-    title: 'HOOPP pension tiers',
-    note: 'Lifetime pension and the bridge benefit that stops at 65, per commencement age, straight from your HOOPP portal estimate. Start ages between tiers are interpolated.',
-    fields: [
-      {key:'startAge', label:'Start age', type:'number'},
-      {key:'lifetime', label:'Lifetime pension $/mo', type:'number'},
-      {key:'bridge', label:'Bridge benefit $/mo', type:'number'}
-    ]
-  }
+
 };
 
 const assumptionFields = [
   {key:'householdType',label:'Household',type:'select',options:['single','couple']},
   {key:'province',label:'Province / territory',type:'select',options:Object.keys(E.PROVINCES)},
   {key:'desiredMonthlyIncome', label:'After-tax spending $/mo', type:'number', hint:"Today's dollars. The engine grosses up withdrawals to hit this after tax."},
-  {key:'inflation', label:'Inflation %/yr', type:'number', step:'0.1', hint:'Indexes spending, CPP, OAS, salaries, property costs, contribution limits and tax brackets.'},
+  {key:'inflation', label:'Inflation %/yr', type:'number', step:'0.1'},
   {key:'rentalIncomeInflation', label:'Rent growth %/yr', type:'number', step:'0.1'},
   {key:'vacancyRate', label:'Vacancy and credit loss %', type:'number', step:'0.5'},
   {key:'rentalOwnerSplit', label:'Rental income taxed to person 1 (%)', type:'number'},
@@ -201,7 +199,6 @@ const assumptionFields = [
   {key:'badDecadeDelta', label:'Bad-decade haircut %', type:'number', step:'0.1'},
   {key:'mcRuns', label:'Monte Carlo runs', type:'number'},
   {key:'mcVolatility', label:'Return volatility %', type:'number', step:'0.5'},
-  {key:'hooppIndexRate', label:'HOOPP indexing %/yr', type:'number', step:'0.1'},
   {key:'contributionSlice', label:'Optimizer step size $', type:'number', hint:'Smaller is more precise and slower. $500 is plenty.'}
 ];
 
@@ -214,7 +211,6 @@ const assumptionToggles = [
   {key:'optimizePensionSplit', label:'Split eligible pension income between spouses'},
   {key:'reinvestSurplus', label:'Reinvest surplus cash (forced RRIF income) into TFSA then non-registered'},
   {key:'reinvestPayoffPayments', label:'Invest freed-up payments after a debt is paid off'},
-  {key:'hooppIndexBeforeStart', label:'Index HOOPP amounts between today and commencement'}
 ];
 
 const el = id => document.getElementById(id);
@@ -232,7 +228,7 @@ function openWizard() {
     wizardDraft.accounts = []; wizardDraft.realEstate = []; wizardDraft.dbPensions = [];
     wizardDraft.assumptions.childcare = {childrenBirthYears:[],items:[]};
     wizardDraft.incomes.forEach((p,i) => Object.assign(p,{name:'Person '+(i+1), salary:0, hooppStartAge:null,
-      pension2Amount:0,hbpAnnual:0,hbpYears:0,rrspRoomOpening:0,tfsaRoomOpening:0}));
+      pension2Amount:0,hbpAnnual:0,hbpRepaymentBudget:0,hbpYears:0,rrspRoomOpening:0,tfsaRoomOpening:0}));
   }
   if (window.parent !== window) document.body.classList.add('wizard-only');
   el('setup-wizard').showModal(); renderWizard();
@@ -285,6 +281,14 @@ function renderWizard() {
       schema.incomes.fields.filter(f=>f.key.startsWith('fhsa')).forEach(f=>wizardField(section,p,f));
     });
     if(wizardStep===5) {
+      const heading=document.createElement('h3'); heading.textContent='Pensions (optional)';body.appendChild(heading);
+      wizardDraft.dbPensions.forEach(plan=>{
+        const section=document.createElement('div');section.className='item-row';body.appendChild(section);
+        schema.dbPensions.fields.forEach(f=>wizardField(section,plan,f));
+        section.appendChild(pensionTiers(plan,renderWizard));
+        const remove=document.createElement('button');remove.className='btn danger';remove.textContent='Remove pension';remove.onclick=()=>{wizardDraft.dbPensions.splice(wizardDraft.dbPensions.indexOf(plan),1);renderWizard();};section.appendChild(remove);
+      });
+      const addPension=document.createElement('button');addPension.className='btn ghost';addPension.textContent='Add pension';addPension.onclick=()=>{wizardDraft.dbPensions.push(newPension(wizardPeople()[0].name));renderWizard();};body.appendChild(addPension);
       const review=document.createElement('p');review.textContent=`${wizardDraft.assumptions.householdType} | ${E.PROVINCES[wizardDraft.assumptions.province].name} | ${wizardPeople().map(p=>p.name+' (born '+p.birthYear+')').join(', ')} | ${wizardDraft.accounts.length} accounts`;body.appendChild(review);
     }
   }
@@ -318,12 +322,13 @@ function render() {
   editor.appendChild(assumptionsSection());
   editor.appendChild(phasesSection());
   editor.appendChild(childcareSection());
-  Object.keys(schema).forEach(cat => editor.appendChild(listSection(cat)));
+  ['incomes','dbPensions','accounts','realEstate'].forEach(cat => editor.appendChild(listSection(cat)));
   editor.appendChild(backupSection());
 }
 
 let fieldSequence = 0;
 function field(f, value, onchange) {
+  if (!f.hint && !SettingHelp.text[f.key]) throw new Error('Missing setting help: '+f.key+' '+f.label);
   const fieldId = 'field-' + (++fieldSequence);
   const g = document.createElement('div');
   g.className = 'input-group' + (f.type === 'checkbox' ? ' check' : '');
@@ -334,13 +339,14 @@ function field(f, value, onchange) {
     inp.onchange = e => onchange(e.target.checked);
     const lab = document.createElement('label'); lab.textContent = f.label; lab.htmlFor = fieldId;
     g.append(inp, lab);
+    SettingHelp.attach(inp, f.hint || SettingHelp.text[f.key]);
     return g;
   }
   const lab = document.createElement('label'); lab.textContent = f.label; lab.htmlFor = fieldId; g.appendChild(lab);
   if (f.type === 'select' || f.type === 'owner') {
     const sel = document.createElement('select');
     sel.id = fieldId;
-    const opts = f.type === 'owner' ? [...config.incomes.slice(0, config.assumptions.householdType === 'single' ? 1 : 2).map(p=>p.name), 'Joint'] : f.options;
+    const opts = f.type === 'owner' ? [...config.incomes.slice(0, config.assumptions.householdType === 'single' ? 1 : 2).map(p=>p.name), ...(f.label === 'Member' ? [] : ['Joint'])] : f.options;
     opts.forEach(o => {
       const opt = document.createElement('option');
       opt.value = o; opt.textContent = String(o);
@@ -357,6 +363,7 @@ function field(f, value, onchange) {
     inp.onchange = e => onchange(f.type === 'number' ? (e.target.value === '' ? '' : parseFloat(e.target.value)) : e.target.value);
     g.appendChild(inp);
   }
+  SettingHelp.attach(g.querySelector('input,select'), f.hint || SettingHelp.text[f.key]);
   if (f.hint) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = f.hint; g.appendChild(h); }
   return g;
 }
@@ -378,8 +385,8 @@ function phasesSection() {
   sec.innerHTML = '<h2>Spending phases</h2><div class="notice">Each phase applies a percentage of the base spending goal up to the age shown, matched against the older spouse\'s age. Leave the last phase at 999 so it covers the rest of the plan.</div>';
   config.assumptions.spendingPhases.forEach((p, i) => {
     const row = document.createElement('div'); row.className = 'item-row';
-    row.appendChild(field({label:'Through age', type:'number'}, p.untilAge, v => p.untilAge = v));
-    row.appendChild(field({label:'% of spending goal', type:'number'}, p.factor, v => p.factor = v));
+    row.appendChild(field({key:'untilAge',label:'Through age', type:'number'}, p.untilAge, v => p.untilAge = v));
+    row.appendChild(field({key:'factor',label:'% of spending goal', type:'number'}, p.factor, v => p.factor = v));
     const del = document.createElement('button'); del.className = 'btn danger'; del.textContent = 'Remove';
     del.onclick = () => { config.assumptions.spendingPhases.splice(i,1); render(); };
     row.appendChild(del);
@@ -394,21 +401,21 @@ function phasesSection() {
 function childcareSection() {
   const cc = config.assumptions.childcare;
   const sec = document.createElement('div'); sec.className = 'section';
-  sec.innerHTML = '<h2>Childcare deduction</h2><div class="notice">Claimed automatically by whichever spouse has the lower employment income, capped at the CRA limits ($8,000 per child under 7, $5,000 ages 7 to 16) and at two thirds of that spouse\'s earned income. Each cost line runs from its start year to its end year, dropping by the decline amount every year.</div>';
+  sec.innerHTML = '<h2>Childcare deduction</h2><div class="notice">Claimed automatically by the spouse with lower income before the childcare deduction, capped at the CRA limits ($8,000 per child under 7, $5,000 ages 7 to 16) and at two thirds of that spouse\'s earned income. Each cost line runs from its start year to its end year, dropping by the decline amount every year.</div>';
 
   const kidsRow = document.createElement('div'); kidsRow.className = 'item-row';
-  kidsRow.appendChild(field({label:'Children\'s birth years (comma separated)', type:'text'},
+  kidsRow.appendChild(field({key:'childrenBirthYears',label:'Children\'s birth years (comma separated)', type:'text'},
     cc.childrenBirthYears.join(', '),
     v => cc.childrenBirthYears = String(v).split(',').map(x => parseInt(x.trim(),10)).filter(x => x > 1900)));
   sec.appendChild(kidsRow);
 
   cc.items.forEach((it, i) => {
     const row = document.createElement('div'); row.className = 'item-row';
-    row.appendChild(field({label:'Cost', type:'text'}, it.name, v => it.name = v));
-    row.appendChild(field({label:'Amount /yr', type:'number'}, it.amount, v => it.amount = v));
-    row.appendChild(field({label:'Start year', type:'number'}, it.startYear, v => it.startYear = v));
-    row.appendChild(field({label:'End year', type:'number'}, it.endYear, v => it.endYear = v));
-    row.appendChild(field({label:'Decline /yr', type:'number'}, it.declinePerYear, v => it.declinePerYear = v));
+    row.appendChild(field({key:'name',label:'Cost', type:'text'}, it.name, v => it.name = v));
+    row.appendChild(field({key:'amount',label:'Amount /yr', type:'number'}, it.amount, v => it.amount = v));
+    row.appendChild(field({key:'startYear',label:'Start year', type:'number'}, it.startYear, v => it.startYear = v));
+    row.appendChild(field({key:'endYear',label:'End year', type:'number'}, it.endYear, v => it.endYear = v));
+    row.appendChild(field({key:'declinePerYear',label:'Decline /yr', type:'number'}, it.declinePerYear, v => it.declinePerYear = v));
     const del = document.createElement('button'); del.className = 'btn danger'; del.textContent = 'Remove';
     del.onclick = () => { cc.items.splice(i,1); render(); };
     row.appendChild(del);
@@ -423,6 +430,7 @@ function childcareSection() {
 function listSection(cat) {
   const spec = schema[cat];
   const sec = document.createElement('div'); sec.className = 'section';
+  if (cat === 'dbPensions') sec.id='pensions';
   sec.innerHTML = `<h2>${spec.title}</h2>` + (spec.note ? `<div class="notice">${spec.note}</div>` : '');
   if (!Array.isArray(config[cat])) config[cat] = [];
   config[cat].forEach((item, i) => {
@@ -434,6 +442,7 @@ function listSection(cat) {
       }
       config[cat][i][f.key] = v;
     })));
+    if (cat === 'dbPensions') row.appendChild(pensionTiers(item, () => render()));
     if (!spec.fixed) {
       const del = document.createElement('button'); del.className = 'btn danger'; del.textContent = 'Remove';
       del.onclick = () => { config[cat].splice(i,1); render(); };
@@ -443,10 +452,28 @@ function listSection(cat) {
   });
   if (!spec.fixed) {
     const add = document.createElement('button'); add.className = 'btn ghost'; add.textContent = 'Add';
-    add.onclick = () => { config[cat].push({}); render(); };
+    add.textContent = cat === 'dbPensions' ? 'Add pension' : 'Add';
+    add.onclick = () => { config[cat].push(cat === 'dbPensions' ? newPension(config.incomes[0].name) : {}); render(); };
     sec.appendChild(add);
   }
   return sec;
+}
+
+function newPension(owner) {
+  return {name:'Workplace pension',owner,startAge:65,lifetime:0,bridge:0,bridgeCutoffAge:65,indexingRate:0,indexBeforeStart:false,followsRetirement:false,tiers:[]};
+}
+function pensionTiers(plan, refresh) {
+  const section=document.createElement('details');section.style.width='100%';
+  section.open=(plan.tiers || []).length > 0;
+  const summary=document.createElement('summary');summary.textContent='Pension estimates at different ages ('+(plan.tiers || []).length+')';section.appendChild(summary);
+  const note=document.createElement('p');note.textContent='Optional: copy estimates from your pension statement. These override the lifetime and bridge amounts above. Between ages, amounts are interpolated; outside the entered range, the nearest estimate is used. Link the pension to retirement to use these in the retirement planner.';section.appendChild(note);
+  (plan.tiers || []).forEach((tier,i)=>{
+    const row=document.createElement('div');row.className='item-row';
+    ['startAge','lifetime','bridge'].forEach(key=>row.appendChild(field(schema.dbPensions.fields.find(f=>f.key===key),tier[key],v=>tier[key]=v)));
+    const remove=document.createElement('button');remove.className='btn danger';remove.textContent='Remove estimate';remove.onclick=()=>{plan.tiers.splice(i,1);refresh();};row.appendChild(remove);section.appendChild(row);
+  });
+  const add=document.createElement('button');add.className='btn ghost';add.textContent='Add age estimate';add.onclick=()=>{(plan.tiers ||= []).push({startAge:65,lifetime:0,bridge:0});refresh();};section.appendChild(add);
+  return section;
 }
 
 function backupSection() {
@@ -476,6 +503,7 @@ async function loadBackups() {
 }
 
 async function save() {
+  delete config.assumptions.withdrawalPlan;
   const res = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(config)});
   const body = await res.json();
   if (body.success) { config = body.config; render(); loadBackups(); toast('Changes saved'); }
