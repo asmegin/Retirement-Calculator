@@ -29,12 +29,17 @@
   .toast.show{opacity:1}
   .toast.err{background:var(--danger);color:#fff}
   @media (max-width:640px){body{padding:1rem}}
+  dialog{background:var(--panel);color:var(--text);border:1px solid #334155;border-radius:14px;width:min(950px,95vw);max-height:90vh;padding:1.5rem}
+  dialog::backdrop{background:rgba(0,0,0,.75)}
+  [hidden]{display:none!important}
+  body.wizard-only>.nav,body.wizard-only>.notice,body.wizard-only>#editor{display:none}
 </style>
 </head>
 <body>
 <div class="nav">
   <a href="/" class="btn ghost">Back to dashboard</a>
   <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+    <button class="btn ghost" onclick="openWizard()">Setup Wizard</button>
     <button class="btn ghost" onclick="exportConfig()">Export file</button>
     <button class="btn ghost" onclick="document.getElementById('import-file').click()">Import file</button>
     <input type="file" id="import-file" accept="application/json" hidden onchange="importConfig(event)">
@@ -43,10 +48,23 @@
   </div>
 </div>
 
+<div class="notice">Tax projections use 2025 provincial schedules indexed by your inflation assumption and a 14% federal first bracket for future years. GIS is an annual estimate using prior-year income and July?September 2026 rates; full OAS eligibility is assumed. Specific refundable credits, EI/QPIP, partial OAS, and corporate tax-account integration require separate review.
+<a href="https://www.canada.ca/en/revenue-agency/services/forms-publications/tax-packages-years/general-income-tax-benefit-package.html" style="color:var(--accent)">CRA tax schedules</a> &middot; <a href="https://www.canada.ca/en/services/benefits/publicpensions/old-age-security/payments.html" style="color:var(--accent)">GIS rules</a></div>
 <div id="editor"></div>
+<dialog id="setup-wizard" aria-labelledby="wizard-title">
+  <h2 id="wizard-title">Setup Wizard</h2><p id="wizard-progress"></p>
+  <div id="wizard-body"></div><p id="wizard-error" role="alert" style="color:#fca5a5"></p>
+  <div style="display:flex;gap:.6rem;justify-content:flex-end;flex-wrap:wrap">
+    <button class="btn ghost" id="wizard-cancel" onclick="closeWizard()">Cancel</button>
+    <button class="btn ghost" id="wizard-back" onclick="wizardMove(-1)">Back</button>
+    <button class="btn" id="wizard-next" onclick="wizardMove(1)">Next</button>
+  </div>
+</dialog>
 <div class="toast" id="toast"></div>
 
+<script src="/engine.js"></script>
 <script>
+const E = window.RetireEngine;
 let config = {};
 
 const schema = {
@@ -58,6 +76,16 @@ const schema = {
       {key:'name', label:'Name', type:'text'},
       {key:'birthYear', label:'Birth year', type:'number'},
       {key:'salary', label:'Current salary', type:'number'},
+      {key:'incorporated', label:'Incorporated business owner', type:'checkbox'},
+      {key:'eligibleDividends', label:'Eligible dividends /yr', type:'number'},
+      {key:'nonEligibleDividends', label:'Non-eligible dividends /yr', type:'number'},
+      {key:'annualDeductions', label:'Other deductible expenses /yr', type:'number'},
+      {key:'pensionAdjustment', label:'DB / other pension adjustment /yr', type:'number'},
+      {key:'gisEligible', label:'Eligible for GIS (Canadian resident, no sponsorship)', type:'checkbox'},
+      {key:'gisIncomeOpening', label:'Prior-year GIS income (blank = estimate)', type:'number'},
+      {key:'fhsaOpenYear', label:'First FHSA opened in year', type:'number'},
+      {key:'fhsaRoomOpening', label:'Current FHSA participation room', type:'number'},
+      {key:'fhsaLifetimeContributions', label:'FHSA lifetime contributions / transfers used', type:'number'},
       {key:'salaryGrowth', label:'Salary growth %/yr', type:'number', step:'0.1'},
       {key:'targetRetireAge', label:'Retirement age', type:'number'},
       {key:'cppBaseAt65', label:'CPP at 65 ($/mo)', type:'number'},
@@ -81,12 +109,16 @@ const schema = {
     fields: [
       {key:'name', label:'Name', type:'text'},
       {key:'owner', label:'Owner', type:'owner'},
-      {key:'type', label:'Type', type:'select', options:['RRSP','TFSA','TAXABLE']},
+      {key:'type', label:'Type', type:'select', options:['RRSP','TFSA','FHSA','TAXABLE','CORP','DC']},
       {key:'balance', label:'Balance', type:'number'},
+      {key:'corporateTaxRate', label:'CORP effective tax on returns %', type:'number', hint:'Use an effective rate reflecting your investment mix and refunds. Corporate tax accounts (RDTOH, CDA, GRIP) are not tracked.'},
+      {key:'dividendType', label:'CORP distribution type', type:'select', options:['eligible','non-eligible']},
+      {key:'qualifyingWithdrawalYear', label:'FHSA qualifying home purchase year (0 = none)', type:'number'},
+      {key:'qualifyingWithdrawalAmount', label:'FHSA qualifying withdrawal (0 = full balance)', type:'number'},
       {key:'costBasis', label:'Cost basis (non-reg only)', type:'number'},
       {key:'growthRate', label:'Growth %/yr', type:'number', step:'0.1'},
       {key:'distributionYield', label:'Taxable yield %/yr (non-reg)', type:'number', step:'0.1'},
-      {key:'contribAmt', label:'Your contribution', type:'number'},
+      {key:'contribAmt', label:'Contribution / retained business earnings', type:'number', hint:'For CORP, enter retained earnings after operating tax, salary, dividends and employer payroll costs. These are separate from personal cash flow.'},
       {key:'contribFreq', label:'Frequency', type:'select', options:['weekly','biweekly','semimonthly','monthly','yearly']},
       {key:'contribGrowth', label:'Contribution growth %/yr', type:'number', step:'0.1'},
       {key:'annualBonus', label:'Extra lump sum /yr', type:'number'},
@@ -112,6 +144,10 @@ const schema = {
       {key:'paymentBiweekly', label:'Payment (biweekly)', type:'number', step:'0.01'},
       {key:'paymentMonthly', label:'Payment (monthly)', type:'number', step:'0.01'},
       {key:'payoffYear', label:'Expected payoff year', type:'number'},
+      {key:'vacancyRate', label:'Property vacancy % (blank = household)', type:'number'},
+      {key:'ownerSplit', label:'Person 1 ownership % (blank = household)', type:'number'},
+      {key:'rentalName', label:'Attached rental name (blank = first rental)', type:'text'},
+      {key:'ccaRate', label:'CCA declining balance rate %', type:'number'},
       {key:'grossRentMonthly', label:'Gross rent /mo', type:'number'},
       {key:'annualPropertyTax', label:'Property tax /yr', type:'number'},
       {key:'annualInsurance', label:'Insurance /yr', type:'number'},
@@ -127,6 +163,17 @@ const schema = {
       {key:'reinvestOnPayoff', label:'Invest the payment once paid off', type:'checkbox'}
     ]
   },
+  dbPensions: {
+    title:'Defined benefit pensions',
+    note:'Add any number of DB plans. Amounts are monthly at commencement; indexing applies after commencement unless selected. Legacy HOOPP and Other pension entries remain additive. Enter the pension adjustment under People. DC accounts model pooled pension savings; jurisdiction-specific locked-in withdrawal limits are not applied.',
+    fields:[
+      {key:'name',label:'Plan name',type:'text'}, {key:'owner',label:'Member',type:'owner'},
+      {key:'startAge',label:'Start age',type:'number'}, {key:'lifetime',label:'Lifetime pension /mo',type:'number'},
+      {key:'bridge',label:'Bridge /mo',type:'number'}, {key:'bridgeCutoffAge',label:'Bridge ends at age',type:'number'},
+      {key:'indexingRate',label:'Indexing %/yr',type:'number',step:'0.1'},
+      {key:'indexBeforeStart',label:'Index amounts before commencement',type:'checkbox'}
+    ]
+  },
   hooppTiers: {
     title: 'HOOPP pension tiers',
     note: 'Lifetime pension and the bridge benefit that stops at 65, per commencement age, straight from your HOOPP portal estimate. Start ages between tiers are interpolated.',
@@ -139,6 +186,8 @@ const schema = {
 };
 
 const assumptionFields = [
+  {key:'householdType',label:'Household',type:'select',options:['single','couple']},
+  {key:'province',label:'Province / territory',type:'select',options:Object.keys(E.PROVINCES)},
   {key:'desiredMonthlyIncome', label:'After-tax spending $/mo', type:'number', hint:"Today's dollars. The engine grosses up withdrawals to hit this after tax."},
   {key:'inflation', label:'Inflation %/yr', type:'number', step:'0.1', hint:'Indexes spending, CPP, OAS, salaries, property costs, contribution limits and tax brackets.'},
   {key:'rentalIncomeInflation', label:'Rent growth %/yr', type:'number', step:'0.1'},
@@ -157,6 +206,7 @@ const assumptionFields = [
 ];
 
 const assumptionToggles = [
+  {key:'gisEnabled',label:'Include estimated GIS for eligible OAS recipients'},
   {key:'optimizeContributions', label:'Optimize where flexible contributions go'},
   {key:'reinvestRefund', label:'Reinvest RRSP refunds the following year'},
   {key:'spendingIncludesDebtPayments', label:'Spending goal already covers home mortgage and HELOC payments'},
@@ -173,10 +223,93 @@ function toast(msg, isErr) {
   setTimeout(() => t.className = 'toast', 2400);
 }
 
+
+let wizardDraft = null, wizardStep = 0;
+const wizardSteps = ['Household','Province','Ages','Income and business','Existing balances','Real estate and review'];
+function openWizard() {
+  wizardDraft = structuredClone(config); wizardStep = 0;
+  if (config.onboardingComplete === false) {
+    wizardDraft.accounts = []; wizardDraft.realEstate = []; wizardDraft.dbPensions = [];
+    wizardDraft.assumptions.childcare = {childrenBirthYears:[],items:[]};
+    wizardDraft.incomes.forEach((p,i) => Object.assign(p,{name:'Person '+(i+1), salary:0, hooppStartAge:null,
+      pension2Amount:0,hbpAnnual:0,hbpYears:0,rrspRoomOpening:0,tfsaRoomOpening:0}));
+  }
+  if (window.parent !== window) document.body.classList.add('wizard-only');
+  el('setup-wizard').showModal(); renderWizard();
+}
+function closeWizard() {
+  el('setup-wizard').close(); wizardDraft = null;
+  if (window.parent !== window) window.parent.postMessage({type:'wizard-closed'},location.origin);
+}
+function wizardPeople() { return wizardDraft.incomes.slice(0,wizardDraft.assumptions.householdType === 'single' ? 1 : 2); }
+function wizardField(row, obj, f) {
+  if (f.type === 'owner') f = {...f,type:'select',options:wizardPeople().map(p=>p.name)};
+  row.appendChild(field(f,obj[f.key],v => {obj[f.key]=v;}));
+}
+function renderWizard() {
+  const body = el('wizard-body'); body.replaceChildren(); el('wizard-error').textContent='';
+  el('wizard-progress').textContent = `Step ${wizardStep+1} of 6: ${wizardSteps[wizardStep]}`;
+  el('wizard-back').hidden = wizardStep===0; el('wizard-next').textContent = wizardStep===5 ? 'Save setup' : 'Next';
+  const row = document.createElement('div'); row.className='item-row'; body.appendChild(row);
+  if (wizardStep===0) wizardField(row,wizardDraft.assumptions,{key:'householdType',label:'Household type',type:'select',options:['single','couple']});
+  if (wizardStep===1) wizardField(row,wizardDraft.assumptions,{key:'province',label:'Province / territory',type:'select',options:Object.keys(E.PROVINCES)});
+  if (wizardStep===2 || wizardStep===3) wizardPeople().forEach((p,i) => {
+    const section=document.createElement('div'); section.className='item-row'; const heading=document.createElement('strong'); heading.textContent=p.name; section.appendChild(heading); body.appendChild(section);
+    const fields=wizardStep===2 ? [
+      {key:'name',label:'Name',type:'text'}, {key:'birthYear',label:'Birth year',type:'number'},
+      {key:'targetRetireAge',label:'Retirement age',type:'number'}
+    ] : schema.incomes.fields.filter(f=>['salary','salaryGrowth','incorporated','eligibleDividends','nonEligibleDividends','rrspRoomOpening','tfsaRoomOpening'].includes(f.key));
+    fields.forEach(f=> {
+      if(f.key==='name') section.appendChild(field(f,p.name,v=> {
+        ['accounts','dbPensions'].forEach(key=>wizardDraft[key].forEach(a=>{if(a.owner===p.name)a.owner=v;})); p.name=v;
+      })); else wizardField(section,p,f);
+    });
+    if(wizardStep===3) {
+      const note=document.createElement('p'); note.textContent='Enter salary and actual cash dividends separately. Salary creates RRSP room and CPP/QPP costs. Dividends shown here come from business earnings outside the investment accounts; CORP withdrawals are calculated separately.'; body.appendChild(note);
+    }
+  });
+  if (wizardStep===4 || wizardStep===5) {
+    const cat=wizardStep===4?'accounts':'realEstate';
+    const keys=wizardStep===4 ? ['name','owner','type','balance','costBasis','growthRate','corporateTaxRate'] : ['name','type','value','mortgage','interestRate','paymentMonthly','grossRentMonthly','vacancyRate','uccPool','ccaEnabled'];
+    const note=document.createElement('p'); note.textContent=wizardStep===4 ? 'Add each existing RRSP, TFSA, FHSA, taxable, corporate, or DC account. For an existing FHSA, update its opening year, unused room and lifetime contributions below.' : 'Add each property or debt. You can set sale dates, ownership and attached rental debt in Configure after setup. Saving applies this household, province, people and balances.'; body.appendChild(note);
+    wizardDraft[cat].forEach((obj,i)=> {
+      if(cat==='accounts' && !wizardPeople().some(p=>p.name===obj.owner) && obj.owner!=='Joint') return;
+      const section=document.createElement('div'); section.className='item-row'; body.appendChild(section);
+      schema[cat].fields.filter(f=>keys.includes(f.key)).forEach(f=>wizardField(section,obj,f));
+      const remove=document.createElement('button'); remove.className='btn danger';remove.textContent='Remove'; remove.onclick=()=>{wizardDraft[cat].splice(i,1);renderWizard();};section.appendChild(remove);
+    });
+    const add=document.createElement('button');add.className='btn ghost';add.textContent=wizardStep===4?'Add account':'Add property / debt';
+    add.onclick=()=>{wizardDraft[cat].push(wizardStep===4 ? {name:'Account',owner:wizardPeople()[0].name,type:'TFSA',balance:0,growthRate:5} : {name:'Property '+(wizardDraft[cat].length+1),type:'principal',value:0,mortgage:0,interestRate:4,paymentMonthly:0,grossRentMonthly:0});renderWizard();};body.appendChild(add);
+    if(wizardStep===4) wizardPeople().forEach(p=>{
+      const section=document.createElement('div');section.className='item-row';const title=document.createElement('strong');title.textContent=p.name+' FHSA history';section.appendChild(title);body.appendChild(section);
+      schema.incomes.fields.filter(f=>f.key.startsWith('fhsa')).forEach(f=>wizardField(section,p,f));
+    });
+    if(wizardStep===5) {
+      const review=document.createElement('p');review.textContent=`${wizardDraft.assumptions.householdType} | ${E.PROVINCES[wizardDraft.assumptions.province].name} | ${wizardPeople().map(p=>p.name+' (born '+p.birthYear+')').join(', ')} | ${wizardDraft.accounts.length} accounts`;body.appendChild(review);
+    }
+  }
+}
+async function wizardMove(direction) {
+  if(direction<0){wizardStep--;renderWizard();return;}
+  if(wizardPeople().some(p=>!p.name.trim() || !Number.isFinite(+p.birthYear) || +p.birthYear<1900 || +p.birthYear>new Date().getFullYear()-18)) {el('wizard-error').textContent='Enter a name and a valid adult birth year for each person.';return;}
+  if(wizardPeople().length===2 && wizardPeople()[0].name===wizardPeople()[1].name){el('wizard-error').textContent='Use distinct names so account ownership stays unambiguous.';return;}
+  if(wizardStep<5){wizardStep++;renderWizard();return;}
+  el('wizard-next').disabled=true;
+  try {
+    wizardDraft.onboardingComplete=true;
+    const normalized=E.normalizeConfig(wizardDraft);E.simulate(normalized);
+    const res=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(normalized)});
+    const data=await res.json();if(!res.ok)throw new Error(data.error || 'Could not save setup');
+    config=data.config;render();closeWizard();toast('Setup saved');
+  } catch(err){el('wizard-error').textContent=err.message;}
+  finally{el('wizard-next').disabled=false;}
+}
+
 async function init() {
-  config = await (await fetch('/api/config')).json();
+  config = E.normalizeConfig(await (await fetch('/api/config')).json());
   render();
   loadBackups();
+  if (config.onboardingComplete === false || new URLSearchParams(location.search).has('wizard')) openWizard();
 }
 
 function render() {
@@ -189,21 +322,25 @@ function render() {
   editor.appendChild(backupSection());
 }
 
+let fieldSequence = 0;
 function field(f, value, onchange) {
+  const fieldId = 'field-' + (++fieldSequence);
   const g = document.createElement('div');
   g.className = 'input-group' + (f.type === 'checkbox' ? ' check' : '');
   if (f.type === 'checkbox') {
     const inp = document.createElement('input');
+    inp.id = fieldId;
     inp.type = 'checkbox'; inp.checked = value === true;
     inp.onchange = e => onchange(e.target.checked);
-    const lab = document.createElement('label'); lab.textContent = f.label;
+    const lab = document.createElement('label'); lab.textContent = f.label; lab.htmlFor = fieldId;
     g.append(inp, lab);
     return g;
   }
-  const lab = document.createElement('label'); lab.textContent = f.label; g.appendChild(lab);
+  const lab = document.createElement('label'); lab.textContent = f.label; lab.htmlFor = fieldId; g.appendChild(lab);
   if (f.type === 'select' || f.type === 'owner') {
     const sel = document.createElement('select');
-    const opts = f.type === 'owner' ? [config.incomes[0].name, config.incomes[1].name, 'Joint'] : f.options;
+    sel.id = fieldId;
+    const opts = f.type === 'owner' ? [...config.incomes.slice(0, config.assumptions.householdType === 'single' ? 1 : 2).map(p=>p.name), 'Joint'] : f.options;
     opts.forEach(o => {
       const opt = document.createElement('option');
       opt.value = o; opt.textContent = String(o);
@@ -214,6 +351,7 @@ function field(f, value, onchange) {
     g.appendChild(sel);
   } else {
     const inp = document.createElement('input');
+    inp.id = fieldId;
     inp.type = f.type; if (f.step) inp.step = f.step;
     inp.value = (value === undefined || value === null) ? '' : value;
     inp.onchange = e => onchange(f.type === 'number' ? (e.target.value === '' ? '' : parseFloat(e.target.value)) : e.target.value);
@@ -227,10 +365,10 @@ function assumptionsSection() {
   const sec = document.createElement('div'); sec.className = 'section';
   sec.innerHTML = '<h2>Assumptions</h2>';
   const row = document.createElement('div'); row.className = 'item-row';
-  assumptionFields.forEach(f => row.appendChild(field(f, config.assumptions[f.key], v => config.assumptions[f.key] = v)));
+  assumptionFields.forEach(f => row.appendChild(field(f, config.assumptions[f.key], v => { config.assumptions[f.key] = v; if (f.key === 'householdType') render(); })));
   sec.appendChild(row);
   const trow = document.createElement('div'); trow.className = 'item-row';
-  assumptionToggles.forEach(f => trow.appendChild(field({...f, type:'checkbox'}, config.assumptions[f.key], v => config.assumptions[f.key] = v)));
+  assumptionToggles.forEach(f => trow.appendChild(field({...f, type:'checkbox'}, config.assumptions[f.key], v => { config.assumptions[f.key] = v; if (f.key === 'householdType') render(); })));
   sec.appendChild(trow);
   return sec;
 }
@@ -288,8 +426,14 @@ function listSection(cat) {
   sec.innerHTML = `<h2>${spec.title}</h2>` + (spec.note ? `<div class="notice">${spec.note}</div>` : '');
   if (!Array.isArray(config[cat])) config[cat] = [];
   config[cat].forEach((item, i) => {
+    if (config.assumptions.householdType === 'single' && ((cat === 'incomes' && i === 1) || (['accounts','dbPensions'].includes(cat) && item.owner === config.incomes[1].name))) return;
     const row = document.createElement('div'); row.className = 'item-row';
-    spec.fields.forEach(f => row.appendChild(field(f, item[f.key], v => config[cat][i][f.key] = v)));
+    spec.fields.forEach(f => row.appendChild(field(f, item[f.key], v => {
+      if (cat === 'incomes' && f.key === 'name') {
+        const old = item.name; ['accounts','dbPensions'].forEach(key => config[key].forEach(a => { if (a.owner === old) a.owner = v; }));
+      }
+      config[cat][i][f.key] = v;
+    })));
     if (!spec.fixed) {
       const del = document.createElement('button'); del.className = 'btn danger'; del.textContent = 'Remove';
       del.onclick = () => { config[cat].splice(i,1); render(); };
@@ -367,6 +511,7 @@ async function backupNow() {
   if (r.ok) { loadBackups(); toast('Backed up to ' + r.file); } else toast('Backup failed', true);
 }
 
+el('setup-wizard').addEventListener('cancel',event=>{event.preventDefault();closeWizard();});
 init();
 </script>
 </body>

@@ -26,6 +26,31 @@
     bpa: 12747, ageAmt: 6142, ageThresh: 46006, pensionAmt: 1641, creditRate: 0.0505,
     surtax1: 5710, surtax2: 7307
   };
+  /* 2025 annual schedules; future years use the plan's inflation assumption.
+     Sources: CRA T4127 (January/July 2025), provincial 428 forms/worksheets,
+     https://www.canada.ca/en/revenue-agency/services/forms-publications/tax-packages-years/general-income-tax-benefit-package.html
+     Pension amounts: https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-31400-pension-income-amount.html
+     Quebec: https://cdn-contenu.quebec.ca/cdn-contenu/adm/min/finances/publications-adm/parametres/AUTEN_IncomeTax2026.pdf
+     Rates are annual rates (Alberta 8%, not the July payroll catch-up 6%). */
+  function schedule(name, brackets, bpa, ageAmt, ageThresh, pensionAmt, eligible, nonEligible) {
+    return { name: name, brackets: brackets, bpa: bpa, ageAmt: ageAmt, ageThresh: ageThresh,
+      pensionAmt: pensionAmt, creditRate: brackets[0][1], dividendEligible: eligible, dividendNonEligible: nonEligible };
+  }
+  var PROVINCES = {
+    ON: Object.assign(ONT, { name:'Ontario', ageAmt:6223, ageThresh:46330, pensionAmt:1762, dividendEligible:0.10, dividendNonEligible:0.029863 }),
+    BC: schedule('British Columbia', [[49279,.0506],[98560,.077],[113158,.105],[137407,.1229],[186306,.147],[259829,.168],[Infinity,.205]],12932,5799,43169,1000,.12,.0196),
+    AB: schedule('Alberta', [[60000,.08],[151234,.10],[181481,.12],[241974,.13],[362961,.14],[Infinity,.15]],22323,6221,46308,1719,.0812,.0218),
+    QC: schedule('Quebec', [[53255,.14],[106495,.19],[129590,.24],[Infinity,.2575]],18571,3906,42090,3470,.117,.0342),
+    MB: schedule('Manitoba', [[47000,.108],[100000,.1275],[Infinity,.174]],15780,3728,27749,1000,.08,.007835),
+    SK: schedule('Saskatchewan', [[53463,.105],[152750,.125],[Infinity,.145]],19491,5785,43066,1000,.11,.02105),
+    NS: schedule('Nova Scotia', [[30507,.0879],[61015,.1495],[95883,.1667],[154650,.175],[Infinity,.21]],11744,5734,30828,1173,.0885,.015),
+    NB: schedule('New Brunswick', [[51306,.094],[102614,.14],[190060,.16],[Infinity,.195]],13396,6037,44945,1000,.14,.0275),
+    NL: schedule('Newfoundland and Labrador', [[44192,.087],[88382,.145],[157792,.158],[220910,.178],[282214,.198],[564429,.208],[1128858,.213],[Infinity,.218]],11067,7064,38712,1000,.063,.032),
+    PE: schedule('Prince Edward Island', [[33328,.095],[64656,.1347],[105000,.166],[140000,.1762],[Infinity,.19]],14650,6510,36600,1000,.105,.013),
+    YT: schedule('Yukon', [[57375,.064],[114750,.09],[177882,.109],[500000,.128],[Infinity,.15]],16129,9028,45522,2000,.1202,.0067),
+    NT: schedule('Northwest Territories', [[51964,.059],[103930,.086],[168967,.122],[Infinity,.1405]],17842,8727,45522,1000,.115,.06),
+    NU: schedule('Nunavut', [[54707,.04],[109413,.07],[177881,.09],[Infinity,.115]],19274,12303,45522,2000,.0551,.0261)
+  };
   var OAS_CLAWBACK_THRESHOLD = 93454;
   var OAS_CLAWBACK_RATE = 0.15;
   var TFSA_ANNUAL_ROOM = 7000;
@@ -73,6 +98,7 @@
           hbpAnnual: 1516, hbpYears: 10 }
       ],
       assumptions: {
+        province: 'ON', householdType: 'couple', gisEnabled: true,
         desiredMonthlyIncome: 13000,
         inflation: 2.1,
         rentalIncomeInflation: 1.5,
@@ -128,6 +154,7 @@
         { startAge: 60, lifetime: 4180, bridge: 990 },
         { startAge: 65, lifetime: 5550, bridge: 0 }
       ],
+      dbPensions: [],
       realEstate: [
         { name: 'Principal Residence', type: 'principal', value: 950000, appreciation: 3,
           mortgage: 478533.23, interestRate: 3.69, renewalYear: 2028, renewalRate: 3.69,
@@ -160,8 +187,9 @@
     c.incomes = Array.isArray(c.incomes) && c.incomes.length ? c.incomes.slice(0, 2) : d.incomes;
     while (c.incomes.length < 2) c.incomes.push(clone(d.incomes[c.incomes.length]));
     c.incomes = c.incomes.map(function (p, idx) {
+      p = p || {};
       var dp = d.incomes[idx];
-      return {
+      return Object.assign({}, p, {
         name: p.name || dp.name,
         birthYear: int(p.birthYear, dp.birthYear),
         salary: num(p.salary, dp.salary),
@@ -171,8 +199,18 @@
         targetRetireAge: int(p.targetRetireAge, dp.targetRetireAge),
         cppStartAge: clamp(int(p.cppStartAge, 65), 60, 70),
         oasStartAge: clamp(int(p.oasStartAge, 65), 65, 70),
-        hooppStartAge: (p.hooppStartAge === undefined || p.hooppStartAge === '' || p.hooppStartAge === null)
-          ? (dp.hooppStartAge || null) : int(p.hooppStartAge, 55),
+        hooppStartAge: p.hooppStartAge === undefined ? (dp.hooppStartAge || null)
+          : (p.hooppStartAge === '' || p.hooppStartAge === null ? null : int(p.hooppStartAge, 55)),
+        incorporated: p.incorporated === true,
+        eligibleDividends: Math.max(0, num(p.eligibleDividends)),
+        nonEligibleDividends: Math.max(0, num(p.nonEligibleDividends)),
+        annualDeductions: Math.max(0, num(p.annualDeductions, num(p.otherDeductions))),
+        pensionAdjustment: Math.max(0, num(p.pensionAdjustment)),
+        gisEligible: p.gisEligible !== false,
+        gisIncomeOpening: p.gisIncomeOpening == null || p.gisIncomeOpening === '' ? null : Math.max(0,num(p.gisIncomeOpening)),
+        fhsaOpenYear: int(p.fhsaOpenYear, new Date().getFullYear()),
+        fhsaRoomOpening: clamp(num(p.fhsaRoomOpening, 8000), 0, 16000),
+        fhsaLifetimeContributions: clamp(num(p.fhsaLifetimeContributions), 0, 40000),
         rrspRoomOpening: num(p.rrspRoomOpening, dp.rrspRoomOpening),
         tfsaRoomOpening: num(p.tfsaRoomOpening, dp.tfsaRoomOpening),
         hbpAnnual: num(p.hbpAnnual, dp.hbpAnnual),
@@ -181,13 +219,16 @@
         pension2Amount: num(p.pension2Amount, 0),
         pension2StartAge: int(p.pension2StartAge, 65),
         pension2IndexRate: num(p.pension2IndexRate, 0)
-      };
+      });
     });
 
     var a = c.assumptions || {}, da = d.assumptions;
     var phases = Array.isArray(a.spendingPhases) && a.spendingPhases.length ? a.spendingPhases : da.spendingPhases;
     var cc = a.childcare || da.childcare;
-    c.assumptions = {
+    c.assumptions = Object.assign({}, a, {
+      province: Object.prototype.hasOwnProperty.call(PROVINCES, String(a.province).toUpperCase()) ? String(a.province).toUpperCase() : 'ON',
+      householdType: a.householdType === 'single' ? 'single' : 'couple',
+      gisEnabled: a.gisEnabled !== false,
       desiredMonthlyIncome: num(a.desiredMonthlyIncome, da.desiredMonthlyIncome),
       inflation: num(a.inflation, da.inflation),
       rentalIncomeInflation: num(a.rentalIncomeInflation, da.rentalIncomeInflation),
@@ -214,7 +255,7 @@
       spendingPhases: phases.map(function (p) {
         return { untilAge: int(p.untilAge, 999), factor: num(p.factor, 100) };
       }).sort(function (x, y) { return x.untilAge - y.untilAge; }),
-      childcare: {
+      childcare: Object.assign({},cc, {
         childrenBirthYears: (Array.isArray(cc.childrenBirthYears) ? cc.childrenBirthYears : [])
           .map(function (b) { return int(b, 0); }).filter(function (b) { return b > 1900; }),
         items: (Array.isArray(cc.items) ? cc.items : []).map(function (it) {
@@ -226,17 +267,18 @@
             declinePerYear: num(it.declinePerYear, 0)
           };
         })
-      }
-    };
+      })
+    });
 
     var owners = [c.incomes[0].name, c.incomes[1].name];
     c.accounts = (Array.isArray(c.accounts) ? c.accounts : d.accounts).map(function (ac) {
+      ac = ac || {};
       var t = String(ac.type || 'RRSP').toUpperCase();
-      if (['RRSP', 'TFSA', 'TAXABLE'].indexOf(t) < 0) t = 'RRSP';
+      if (['RRSP', 'TFSA', 'TAXABLE', 'CORP', 'FHSA', 'DC'].indexOf(t) < 0) t = 'RRSP';
       var owner = (ac.owner && (owners.indexOf(ac.owner) >= 0 || ac.owner === 'Joint')) ? ac.owner : owners[0];
       var freq = ['weekly', 'biweekly', 'semimonthly', 'monthly', 'yearly'].indexOf(ac.contribFreq) >= 0
         ? ac.contribFreq : 'monthly';
-      return {
+      return Object.assign({}, ac, {
         name: ac.name || 'Account',
         owner: owner,
         type: t,
@@ -244,17 +286,21 @@
         costBasis: (ac.costBasis === undefined || ac.costBasis === '') ? num(ac.balance, 0) : num(ac.costBasis, 0),
         growthRate: num(ac.growthRate, 6),
         distributionYield: num(ac.distributionYield, t === 'TAXABLE' ? 2 : 0),
+        corporateTaxRate: clamp(num(ac.corporateTaxRate, 50), 0, 100),
+        dividendType: ac.dividendType === 'eligible' ? 'eligible' : 'non-eligible',
+        qualifyingWithdrawalYear: int(ac.qualifyingWithdrawalYear),
+        qualifyingWithdrawalAmount: Math.max(0, num(ac.qualifyingWithdrawalAmount)),
         contribAmt: num(ac.contribAmt, 0),
         contribFreq: freq,
         contribGrowth: num(ac.contribGrowth, 0),
         annualBonus: num(ac.annualBonus, 0),
-        employerMatchPct: t === 'RRSP' ? num(ac.employerMatchPct, 0) : 0,
+        employerMatchPct: t === 'RRSP' || t === 'DC' ? num(ac.employerMatchPct, 0) : 0,
         solveToTarget: ac.solveToTarget === true && t === 'RRSP',
         /* solve mode replaces pooling — an account is never both */
-        flexible: ac.flexible === true && !(ac.solveToTarget === true && t === 'RRSP'),
+        flexible: ac.flexible === true && ['RRSP','TFSA','TAXABLE'].indexOf(t) >= 0 && !(ac.solveToTarget === true && t === 'RRSP'),
         hbpAccount: ac.hbpAccount === true,
         reinvestTarget: ac.reinvestTarget === true
-      };
+      });
     });
 
     c.hooppTiers = (Array.isArray(c.hooppTiers) && c.hooppTiers.length ? c.hooppTiers : d.hooppTiers)
@@ -262,13 +308,23 @@
         return { startAge: int(t.startAge, 55), lifetime: num(t.lifetime, 0), bridge: num(t.bridge, 0) };
       }).sort(function (x, y) { return x.startAge - y.startAge; });
 
+    /* Generic DB plans are additive. Legacy HOOPP tiers remain a live alias
+       for the existing commencement-age pension, never copied/double-counted. */
+    c.dbPensions = (Array.isArray(c.dbPensions) ? c.dbPensions : []).map(function (p) {
+      p = p || {};
+      return Object.assign({}, p, { name:p.name || 'DB pension', owner:owners.indexOf(p.owner) >= 0 ? p.owner : owners[0],
+        startAge:int(p.startAge,65), lifetime:Math.max(0,num(p.lifetime)), bridge:Math.max(0,num(p.bridge)),
+        bridgeCutoffAge:int(p.bridgeCutoffAge,65), indexingRate:num(p.indexingRate), indexBeforeStart:p.indexBeforeStart === true });
+    });
+
     c.realEstate = (Array.isArray(c.realEstate) ? c.realEstate : d.realEstate).map(function (r) {
+      r = r || {};
       var name = r.name || 'Property';
       var type = String(r.type || 'principal').toLowerCase();
       if (/heloc|line of credit/i.test(name)) type = 'heloc';
       if (['principal', 'rental', 'heloc'].indexOf(type) < 0) type = 'principal';
       var rate = num(r.interestRate, type === 'heloc' ? 3.75 : 4);
-      return {
+      return Object.assign({}, r, {
         name: name,
         type: type,
         value: num(r.value, 0),
@@ -281,6 +337,10 @@
         paymentMonthly: num(r.paymentMonthly, 0),
         payoffYear: int(r.payoffYear, 0),
         grossRentMonthly: num(r.grossRentMonthly, 0),
+        vacancyRate: r.vacancyRate == null || r.vacancyRate === '' ? null : clamp(num(r.vacancyRate),0,100),
+        ownerSplit: r.ownerSplit == null || r.ownerSplit === '' ? null : clamp(num(r.ownerSplit),0,100),
+        rentalName: r.rentalName || '',
+        ccaRate: clamp(num(r.ccaRate,4),0,100),
         annualPropertyTax: num(r.annualPropertyTax, 0),
         annualInsurance: num(r.annualInsurance, 0),
         annualMaintenance: num(r.annualMaintenance, 0),
@@ -294,10 +354,9 @@
         sellingCostPct: num(r.sellingCostPct, 5),
         ccaEnabled: r.ccaEnabled === true,
         uccPool: num(r.uccPool, 0)
-      };
+      });
     });
 
-    delete c.pensions;
     return c;
   }
 
@@ -360,13 +419,25 @@
     return tax;
   }
 
-  function personTax(taxable, age, eligiblePension, oasReceived, idx) {
+  function personTax(taxable, age, eligiblePension, oasReceived, idx, province, details) {
+    idx = num(idx, 1); province = province || 'ON'; details = details || {};
+    var provincial = PROVINCES[province] || ONT;
     taxable = Math.max(0, taxable);
     function jurisdiction(J, withSurtax) {
       var gross = bracketTax(taxable, J.brackets, idx);
       var credits = J.bpa * idx;
-      if (age >= 65) credits += Math.max(0, J.ageAmt * idx - 0.15 * Math.max(0, taxable - J.ageThresh * idx));
-      credits += Math.min(J.pensionAmt * idx, Math.max(0, eligiblePension));
+      if (J === FED || J === PROVINCES.YT) credits -= 1591 * idx * clamp((taxable / idx - 177882) / (253414 - 177882), 0, 1);
+      if (J === PROVINCES.MB) credits *= 1 - clamp((taxable / idx - 200000) / 200000, 0, 1);
+      if (J === PROVINCES.QC) {
+        var familyIncome = num(details.familyIncome, taxable);
+        var agePension = (age >= 65 ? J.ageAmt * idx : 0) + Math.min(J.pensionAmt * idx, Math.max(0,eligiblePension));
+        credits += Math.max(0, agePension - .185 * Math.max(0, familyIncome - J.ageThresh * idx));
+      } else {
+        if (age >= 65) credits += Math.max(0, J.ageAmt * idx - 0.15 * Math.max(0, taxable - J.ageThresh * idx));
+        credits += Math.min(J.pensionAmt * idx, Math.max(0, eligiblePension));
+      }
+      credits += num(details.cppCredit);
+      if (J === FED || J === PROVINCES.YT) credits += Math.min(1471 * idx, num(details.employment));
       var net = Math.max(0, gross - credits * J.creditRate);
       if (withSurtax) {
         var s = 0;
@@ -374,35 +445,73 @@
         if (net > J.surtax2 * idx) s += 0.36 * (net - J.surtax2 * idx);
         net += s;
       }
+      var e = num(details.eligibleDividends) * 1.38, n = num(details.nonEligibleDividends) * 1.15;
+      net = Math.max(0, net - e * (J === FED ? .150198 : J.dividendEligible || 0) - n * (J === FED ? .090301 : J.dividendNonEligible || 0));
+      if (J === PROVINCES.BC) net = Math.max(0,net - Math.max(0,562 * idx - .0356 * Math.max(0,taxable - 25020 * idx)));
+      if (J === ONT) {
+        net = Math.max(0,net - Math.max(0,2 * 294 * idx - net));
+        /* Ontario health premium thresholds are not indexed. */
+        var h = taxable <= 20000 ? 0 : taxable <= 36000 ? Math.min(300,.06*(taxable-20000))
+          : taxable <= 48000 ? 300+Math.min(150,.06*(taxable-36000))
+          : taxable <= 72000 ? 450+Math.min(150,.25*(taxable-48000))
+          : taxable <= 200600 ? 600+Math.min(150,.25*(taxable-72000)) : 750+Math.min(150,.25*(taxable-200600));
+        net += h;
+      }
       return net;
     }
     var fed = jurisdiction(FED, false);
-    var ont = jurisdiction(ONT, true);
+    if (province === 'QC') fed *= .835;
+    var ont = jurisdiction(provincial, province === 'ON');
     var clawback = Math.min(
       Math.max(0, oasReceived),
       OAS_CLAWBACK_RATE * Math.max(0, taxable - OAS_CLAWBACK_THRESHOLD * idx)
     );
-    return { income: fed + ont, clawback: clawback, total: fed + ont + clawback };
+    return { federal:fed, provincial:ont, income: fed + ont, clawback: clawback, total: fed + ont + clawback };
   }
 
-  function marginalRate(taxable, age, eligiblePension, oas, idx) {
-    var a = personTax(taxable, age, eligiblePension, oas, idx).total;
-    var b = personTax(taxable + 1000, age, eligiblePension, oas, idx).total;
+  function marginalRate(taxable, age, eligiblePension, oas, idx, province, details) {
+    var a = personTax(taxable, age, eligiblePension, oas, idx, province, details).total;
+    var b = personTax(taxable + 1000, age, eligiblePension, oas, idx, province, details).total;
     return (b - a) / 1000;
   }
 
-  function householdTax(p1, p2, idx, splitEnabled) {
+  function householdTax(p1, p2, idx, splitEnabled, province, single) {
+    if (single) p2 = {taxable:0, age:0, eligiblePension:0, oas:0};
     var t1 = p1.taxable, t2 = p2.taxable, transfer = 0;
-    if (splitEnabled) {
+    if (splitEnabled && !single) {
       if (t1 > t2 && p1.eligiblePension > 0) transfer = Math.min(0.5 * p1.eligiblePension, (t1 - t2) / 2);
       else if (t2 > t1 && p2.eligiblePension > 0) transfer = -Math.min(0.5 * p2.eligiblePension, (t2 - t1) / 2);
     }
-    var a = personTax(t1 - transfer, p1.age, Math.max(0, p1.eligiblePension - Math.max(0, transfer)), p1.oas, idx);
-    var b = personTax(t2 + transfer, p2.age, Math.max(0, p2.eligiblePension - Math.max(0, -transfer)), p2.oas, idx);
+    var family = Math.max(0,t1) + Math.max(0,t2);
+    var a = personTax(t1 - transfer, p1.age, Math.max(0, p1.eligiblePension - transfer), p1.oas, idx, province, Object.assign({},p1,{familyIncome:family}));
+    var b = personTax(t2 + transfer, p2.age, Math.max(0, p2.eligiblePension + transfer), p2.oas, idx, province, Object.assign({},p2,{familyIncome:family}));
     return {
       p1: a, p2: b, split: transfer,
       totalTax: a.income + b.income, totalClawback: a.clawback + b.clawback, total: a.total + b.total
     };
+  }
+
+  function payrollCPP(salary, age, idx, province) {
+    if (age < 18 || age >= (province === 'QC' ? 73 : 70)) return {total:0,credit:0,deduction:0};
+    var first = Math.max(0,Math.min(salary,71300 * idx)-3500);
+    var enhanced = first * .01 + Math.max(0,Math.min(salary,81200 * idx)-71300 * idx) * .04;
+    var base = first * (province === 'QC' ? .054 : .0495);
+    return { total:base+enhanced, credit:base, deduction:enhanced };
+  }
+
+  /* Annual GIS planning estimate, July–September 2026 full-OAS rates.
+     Basic benefit tapers at 50% (single) or 25% (couple, per recipient).
+     The top-up has a separate taper; OAS/GIS/TFSA are excluded from income.
+     Annual prior-year income is used (actual Service Canada payments reset July).
+     https://www.canada.ca/en/services/benefits/publicpensions/old-age-security/payments.html */
+  function gisBenefit(income, single, spouseOAS, idx) {
+    income = Math.max(0,income); idx = num(idx,1);
+    var threshold = (single ? 22800 : spouseOAS ? 30096 : 54624) * idx;
+    var rate = single ? .5 : .25;
+    var maximum = (single || !spouseOAS ? 1123.17 : 676.09) * 12 * idx;
+    var basic = Math.min(maximum,threshold * rate);
+    var topup = maximum - basic;
+    return Math.max(0,basic-rate*income) + Math.max(0,topup-.25*Math.max(0,income-(single ? 2000 : 4000)*idx));
   }
 
   /* ------------------------------------------------------------ benefits   */
@@ -484,24 +593,29 @@
   /* =========================================================== simulate()  */
   function simulate(cfg, opts) {
     opts = opts || {};
+    cfg = normalizeConfig(cfg);
     var A = cfg.assumptions;
+    var single = A.householdType === 'single';
+    var active = single ? [0] : [0, 1];
     var infl = num(A.inflation) / 100;
     var startYear = opts.startYear || new Date().getFullYear();
-    var P = cfg.incomes;
+    var P = clone(cfg.incomes);
+    if (single) P[1] = Object.assign({}, P[1], {birthYear:P[0].birthYear, salary:0, cppBaseAt65:0, oasBaseAt65:0,
+      targetRetireAge:P[0].targetRetireAge, hbpYears:0, hbpAnnual:0, rrspRoomOpening:0, tfsaRoomOpening:0});
     var birth = [int(P[0].birthYear), int(P[1].birthYear)];
     var retireYear = [birth[0] + int(P[0].targetRetireAge), birth[1] + int(P[1].targetRetireAge)];
     var deathAge = int(A.targetDeathAge, 90);
     var endYear = Math.max(birth[0] + deathAge, birth[1] + deathAge);
     var mode = opts.returnMode || A.returnMode || 'deterministic';
     var strategy = opts.withdrawalStrategy || A.withdrawalStrategy || 'tfsa-first';
-    var order = WITHDRAWAL_ORDERS[strategy] || WITHDRAWAL_ORDERS['tfsa-first'];
+    var order = (WITHDRAWAL_ORDERS[strategy] || WITHDRAWAL_ORDERS['tfsa-first']).concat(['CORP','DC','FHSA']);
     var rand = opts.rand || null;
     var vol = num(A.mcVolatility, 12) / 100;
     var firstRetireYear = Math.min(retireYear[0], retireYear[1]);
     var slice = A.contributionSlice;
     var rrspFloor = num(A.rrspMinMarginalRate, 35) / 100;
 
-    var accts = cfg.accounts.map(function (a, idx) {
+    var accts = cfg.accounts.filter(function (a) { return !single || a.owner !== cfg.incomes[1].name; }).map(function (a, idx) {
       return {
         id: idx, name: a.name, owner: a.owner, type: a.type,
         bal: a.balance, basis: a.type === 'TAXABLE' ? a.costBasis : a.balance,
@@ -512,6 +626,8 @@
         contribGrowth: a.contribGrowth / 100,
         flexible: a.flexible, solveToTarget: a.solveToTarget,
         hbpAccount: a.hbpAccount, reinvestTarget: a.reinvestTarget,
+        corporateTaxRate: a.corporateTaxRate / 100, dividendType:a.dividendType,
+        qualifyingWithdrawalYear:a.qualifyingWithdrawalYear, qualifyingWithdrawalAmount:a.qualifyingWithdrawalAmount,
         isRRIF: false
       };
     });
@@ -528,8 +644,8 @@
       };
       accts.push(made); return made;
     }
-    var tfsaOf = [ensureAccount('TFSA', P[0].name, 'TFSA'), ensureAccount('TFSA', P[1].name, 'TFSA')];
-    var rrspOf = [ensureAccount('RRSP', P[0].name, 'RRSP'), ensureAccount('RRSP', P[1].name, 'RRSP')];
+    var tfsaOf = [ensureAccount('TFSA', P[0].name, 'TFSA'), single ? null : ensureAccount('TFSA', P[1].name, 'TFSA')];
+    var rrspOf = [ensureAccount('RRSP', P[0].name, 'RRSP'), single ? null : ensureAccount('RRSP', P[1].name, 'RRSP')];
     var nonRegistered = ensureAccount('TAXABLE', P[0].name, 'Non-registered');
     function hbpAccountFor(k) {
       return accts.filter(function (x) { return x.type === 'RRSP' && x.owner === P[k].name && x.hbpAccount; })[0] || rrspOf[k];
@@ -538,12 +654,17 @@
     var props = cfg.realEstate.map(function (r) {
       return { def: r, sched: buildSchedule(r, startYear, endYear), value: r.value, sold: false, ucc: r.uccPool, ccaClaimed: 0 };
     });
-    var rental = props.filter(function (p) { return p.def.type === 'rental'; })[0] || null;
+    var rentals = props.filter(function (p) { return p.def.type === 'rental'; });
+    function attachedRental(p) { return p.def.attachToRental ? rentals.filter(function(r) { return r.def.name === p.def.rentalName; })[0] || (!p.def.rentalName ? rentals[0] : null) : null; }
 
     var rrspRoom = [num(P[0].rrspRoomOpening), num(P[1].rrspRoomOpening)];
     var tfsaRoom = [num(P[0].tfsaRoomOpening), num(P[1].tfsaRoomOpening)];
     var priorEarned = [num(P[0].salary), num(P[1].salary)];
-    var priorPA = [0, 0];
+    var priorPA = P.map(function(p) { return p.pensionAdjustment; });
+    var fhsaUsed = P.map(function(p) { return p.fhsaLifetimeContributions; });
+    var fhsaRoom = P.map(function(p) { return Math.min(p.fhsaRoomOpening,40000-p.fhsaLifetimeContributions); });
+    var fhsaClosed = [false,false], fhsaFirstWithdrawal = [0,0];
+    var gisPriorIncome = P.map(function(p) { return p.gisIncomeOpening; });
     var priorTfsaWithdrawals = [0, 0];
     var pendingRefund = 0;
     var hbpLeft = [int(P[0].hbpYears), int(P[1].hbpYears)];
@@ -585,7 +706,7 @@
           var gain = netProceeds - num(p.def.acb);
           var recapture = p.ccaClaimed;
           if (p.def.type === 'rental') {
-            var sp = num(A.rentalOwnerSplit) / 100;
+            var sp = single ? 1 : num(p.def.ownerSplit,A.rentalOwnerSplit) / 100;
             if (gain > 0) {
               saleTaxable[0] += gain * CAPITAL_GAINS_INCLUSION * sp;
               saleTaxable[1] += gain * CAPITAL_GAINS_INCLUSION * (1 - sp);
@@ -629,51 +750,66 @@
       /* ---- rental operations ---- */
       var rentGross = 0, rentOpex = 0, rentInterest = 0, rentPayment = 0, rentCash = 0;
       var rentIncomeBeforeCCA = 0, ccaClaim = 0, rentTaxable = 0;
-      if (rental && !rental.sold) {
+      var rentalIncome = [0,0], rentalRows = [];
+      rentals.forEach(function(rental) {
+        if (rental.sold) return;
         var rInflIdx = Math.pow(1 + num(A.rentalIncomeInflation) / 100, t);
         var rs = rental.sched.byYear[y];
-        rentGross = rental.def.grossRentMonthly * 12 * rInflIdx * (1 - num(A.vacancyRate) / 100);
-        rentOpex = (rental.def.annualPropertyTax + rental.def.annualInsurance + rental.def.annualMaintenance) * inflIdx;
-        rentInterest = rs.interest;
-        rentPayment = rs.payment;
-        props.forEach(function (p) {
-          if (p.def.type === 'heloc' && p.def.attachToRental && !p.sold) {
-            var hs = p.sched.byYear[y];
-            rentPayment += hs.payment;
-            if (p.def.interestDeductible) rentInterest += hs.interest;
+        var gross = rental.def.grossRentMonthly * 12 * rInflIdx * (1-num(rental.def.vacancyRate,A.vacancyRate)/100);
+        var opex = (rental.def.annualPropertyTax+rental.def.annualInsurance+rental.def.annualMaintenance)*inflIdx;
+        var interest = rental.def.interestDeductible ? rs.interest : 0, payment = rs.payment;
+        props.forEach(function(p) {
+          if (p.def.type !== 'rental' && attachedRental(p) === rental && !p.sold) {
+            var hs = p.sched.byYear[y]; payment += hs.payment;
+            if (p.def.interestDeductible) interest += hs.interest;
           }
         });
-        /* Interest on debt the app has no schedule for — set from your T776
-           line 8710 when the modelled schedules come up short. */
-        rentInterest += num(rental.def.otherAnnualInterest);
-        rentPayment += num(rental.def.otherAnnualInterest);
-        rentCash = rentGross - rentOpex - rentPayment;
-        rentIncomeBeforeCCA = rentGross - rentOpex - rentInterest;
-        if (rental.def.ccaEnabled && rental.ucc > 0 && rentIncomeBeforeCCA > 0) {
-          ccaClaim = Math.min(rental.ucc * CCA_RATE, rentIncomeBeforeCCA);
-          rental.ucc -= ccaClaim;
-          rental.ccaClaimed += ccaClaim;
+        interest += rental.def.otherAnnualInterest; payment += rental.def.otherAnnualInterest;
+        var beforeCCA = gross-opex-interest;
+        rentalRows.push({name:rental.def.name, gross:gross, opex:opex, interest:interest, payment:payment,
+          cash:gross-opex-payment, beforeCCA:beforeCCA, cca:0, taxable:beforeCCA, ucc:rental.ucc, property:rental});
+      });
+      // CCA cannot create/increase the aggregate rental loss; pools stay separate.
+      var ccaCapacity = Math.max(0,rentalRows.reduce(function(sum,r) { return sum+r.beforeCCA; },0));
+      rentalRows.forEach(function(r) {
+        var p = r.property;
+        if (p.def.ccaEnabled) {
+          r.cca = Math.min(p.ucc*p.def.ccaRate/100,Math.max(0,r.beforeCCA),ccaCapacity);
+          p.ucc -= r.cca; p.ccaClaimed += r.cca; ccaCapacity -= r.cca;
         }
-        rentTaxable = rentIncomeBeforeCCA - ccaClaim;
-      }
+        r.ucc = p.ucc; r.taxable -= r.cca;
+        var sp = single ? 1 : num(p.def.ownerSplit,A.rentalOwnerSplit)/100;
+        rentalIncome[0] += r.taxable*sp; rentalIncome[1] += r.taxable*(1-sp);
+        rentGross += r.gross; rentOpex += r.opex; rentInterest += r.interest;
+        rentPayment += r.payment; rentCash += r.cash; rentIncomeBeforeCCA += r.beforeCCA;
+        ccaClaim += r.cca; rentTaxable += r.taxable; delete r.property;
+      });
 
       var householdDebtPayments = 0;
       props.forEach(function (p) {
         if (p.sold || p.def.type === 'rental') return;
-        if (p.def.type === 'heloc' && p.def.attachToRental) return;
+        if (attachedRental(p) && !attachedRental(p).sold) return;
         householdDebtPayments += p.sched.byYear[y].payment;
       });
 
       /* ---- income ---- */
       var person = [0, 1].map(function (k) {
-        var inc = { employment: 0, cpp: 0, oas: 0, pension: 0, pension2: 0, bridge: 0, rrif: 0, rental: 0, dist: 0, sale: 0 };
+        var inc = { employment: 0, cpp: 0, oas: 0, pension: 0, pension2: 0, bridge: 0, rrif: 0, rental: 0, dist: 0, sale: 0, eligibleDividends:0, nonEligibleDividends:0, payroll:0, cppCredit:0, cppDeduction:0, gis:0 };
+        if (single && k === 1) return inc;
         if (!retired[k]) inc.employment = P[k].salary * Math.pow(1 + num(P[k].salaryGrowth) / 100, t);
         if (age[k] >= P[k].cppStartAge) inc.cpp = cppAdjust(P[k].cppBaseAt65, P[k].cppStartAge) * 12 * inflIdx;
         if (age[k] >= P[k].oasStartAge) inc.oas = oasAdjust(P[k].oasBaseAt65, P[k].oasStartAge, age[k]) * 12 * inflIdx;
+        if (!retired[k]) {
+          var remunerationIdx = Math.pow(1+P[k].salaryGrowth/100,t);
+          inc.eligibleDividends = P[k].eligibleDividends*remunerationIdx;
+          inc.nonEligibleDividends = P[k].nonEligibleDividends*remunerationIdx;
+        }
+        var payroll = payrollCPP(inc.employment,age[k],taxIdx,A.province);
+        inc.payroll = payroll.total; inc.cppCredit = payroll.credit; inc.cppDeduction = payroll.deduction;
         return inc;
       });
 
-      [0, 1].forEach(function (k) {
+      active.forEach(function (k) {
         /* second employer pension (e.g. a former employer's DB plan) */
         var p2 = num(P[k].pension2Amount), p2Age = int(P[k].pension2StartAge, 65);
         if (p2 > 0 && age[k] >= p2Age) {
@@ -690,9 +826,15 @@
         if (age[k] < 65) person[k].bridge = tier.bridge * 12 * esc;
       });
 
-      var splitPct = num(A.rentalOwnerSplit, 50) / 100;
-      person[0].rental = rentTaxable * splitPct;
-      person[1].rental = rentTaxable * (1 - splitPct);
+      cfg.dbPensions.forEach(function(plan) {
+        var k = ownerIndex(plan.owner);
+        if ((single && k === 1) || age[k] < plan.startAge) return;
+        var periods = age[k]-plan.startAge + (plan.indexBeforeStart ? Math.max(0,birth[k]+plan.startAge-startYear) : 0);
+        var factor = Math.pow(1+plan.indexingRate/100,periods);
+        person[k].pension += plan.lifetime*12*factor;
+        if (age[k] < plan.bridgeCutoffAge) person[k].bridge += plan.bridge*12*factor;
+      });
+      person[0].rental = rentalIncome[0]; person[1].rental = rentalIncome[1];
       person[0].sale = saleTaxable[0] + saleRecapture[0];
       person[1].sale = saleTaxable[1] + saleRecapture[1];
 
@@ -704,7 +846,7 @@
       });
 
       /* ---- room accrues on prior-year earned income, less the DPSP PA ---- */
-      [0, 1].forEach(function (k) {
+      active.forEach(function (k) {
         var accrual = Math.min(RRSP_EARNED_PCT * priorEarned[k], RRSP_DOLLAR_LIMIT * taxIdx) - priorPA[k];
         rrspRoom[k] = Math.max(0, rrspRoom[k] + Math.max(0, accrual));
         tfsaRoom[k] += TFSA_ANNUAL_ROOM * taxIdx + priorTfsaWithdrawals[k];
@@ -714,16 +856,36 @@
       /* ---- childcare deduction, claimed by the lower-income spouse ---- */
       var ccSpend = childcareSpend(A.childcare, y);
       var ccCap = childcareCap(A.childcare, y);
-      var claimant = person[0].employment <= person[1].employment ? 0 : 1;
+      var claimant = single || person[0].employment <= person[1].employment ? 0 : 1;
       var childcareClaim = Math.max(0, Math.min(ccSpend, ccCap, CHILDCARE_EARNED_FRACTION * person[claimant].employment));
       var childcareDeduction = [0, 0];
       childcareDeduction[claimant] = childcareClaim;
+
+      var fhsaQualifyingCash = 0;
+      active.forEach(function(k) {
+        if (y < P[k].fhsaOpenYear) { fhsaRoom[k] = 0; return; }
+        if (y > startYear) fhsaRoom[k] = Math.min(40000-fhsaUsed[k],8000+Math.min(8000,fhsaRoom[k]));
+        if (y > P[k].fhsaOpenYear+15 || age[k] > 71 || (fhsaFirstWithdrawal[k] && y > fhsaFirstWithdrawal[k]+1)) fhsaClosed[k] = true;
+        accts.filter(function(ac) { return ac.type === 'FHSA' && ownerIndex(ac.owner) === k; }).forEach(function(ac) {
+          if (fhsaClosed[k]) { rrspOf[k].bal += ac.bal; ac.bal = 0; return; }
+          if (ac.qualifyingWithdrawalYear === y) {
+            var withdrawal = Math.min(ac.bal,ac.qualifyingWithdrawalAmount || ac.bal);
+            ac.bal -= withdrawal; fhsaQualifyingCash += withdrawal; ac.qualifyingThisYear = withdrawal;
+            fhsaFirstWithdrawal[k] = y;
+          }
+        });
+      });
 
       /* ---- contributions ---- */
       var contribs = {}, deductible = [0, 0], employerTotal = [0, 0], hbpPaid = [0, 0];
       var rrspTarget = [0, 0], rrspPace = [0, 0];
       function addContrib(ac, amt, isDeductible) {
+        var k = ownerIndex(ac.owner);
+        if (ac.type === 'FHSA') amt = Math.min(amt,fhsaClosed[k] || fhsaFirstWithdrawal[k] || y < P[k].fhsaOpenYear ? 0 : fhsaRoom[k],40000-fhsaUsed[k]);
+        if (ac.type === 'DC') amt = Math.min(amt,Math.max(0,33810*taxIdx-(contribs[ac.id] || 0)));
         if (amt <= 0) return;
+        if (ac.type === 'FHSA') { fhsaRoom[k] -= amt; fhsaUsed[k] += amt; deductible[k] += amt; }
+        if (ac.type === 'DC') deductible[k] += amt;
         contribs[ac.id] = (contribs[ac.id] || 0) + amt;
         var k = ownerIndex(ac.owner);
         if (ac.type === 'RRSP' && isDeductible) { rrspRoom[k] = Math.max(0, rrspRoom[k] - amt); deductible[k] += amt; }
@@ -740,6 +902,7 @@
         rrspPace = pl.pace.slice();
         rrspRoom = pl.rrspRoomAfter.slice();
         tfsaRoom = pl.tfsaRoomAfter.slice();
+        if (pl.fhsaRoomAfter) { fhsaRoom = pl.fhsaRoomAfter.slice(); fhsaUsed = pl.fhsaUsedAfter.slice(); }
       } else {
         var flexBudget = pendingRefund;
         accts.forEach(function (ac) {
@@ -760,12 +923,13 @@
           var k = ownerIndex(ac.owner);
           if (!ac.employerMatchPct || retired[k]) return;
           var match = person[k].employment * ac.employerMatchPct;
+          if (ac.type === 'DC') match = Math.min(match,Math.max(0,33810*taxIdx-(contribs[ac.id] || 0)));
           contribs[ac.id] = (contribs[ac.id] || 0) + match;
           employerTotal[k] += match;
         });
 
         /* HBP repayments: mandatory, not deductible, consume no room */
-        [0, 1].forEach(function (k) {
+        active.forEach(function (k) {
           if (hbpLeft[k] <= 0 || num(P[k].hbpAnnual) <= 0) return;
           var acc = hbpAccountFor(k);
           contribs[acc.id] = (contribs[acc.id] || 0) + num(P[k].hbpAnnual);
@@ -783,7 +947,7 @@
 
         var runningTaxable = [0, 1].map(function (k) {
           return person[k].employment + person[k].cpp + person[k].oas + person[k].pension +
-            person[k].bridge + person[k].rental + person[k].dist + person[k].sale -
+            person[k].bridge + person[k].rental + person[k].dist + person[k].sale + person[k].eligibleDividends*1.38 + person[k].nonEligibleDividends*1.15 - P[k].annualDeductions*inflIdx - person[k].cppDeduction -
             childcareDeduction[k] - deductible[k];
         });
 
@@ -797,8 +961,8 @@
           if (retired[k]) return;
           var g = 0;
           while (rrspRoom[k] >= slice && g++ < 600) {
-            var m = (personTax(runningTaxable[k], age[k], 0, person[k].oas, taxIdx).total
-                   - personTax(runningTaxable[k] - slice, age[k], 0, person[k].oas, taxIdx).total) / slice;
+            var m = (personTax(runningTaxable[k], age[k], 0, person[k].oas, taxIdx, A.province, person[k]).total
+                   - personTax(runningTaxable[k] - slice, age[k], 0, person[k].oas, taxIdx, A.province, person[k]).total) / slice;
             if (m < rrspFloor) break;
             addContrib(ac, slice, true);
             runningTaxable[k] -= slice;
@@ -812,11 +976,11 @@
           while (flexBudget > 1 && guard++ < 600) {
             var step = Math.min(slice, flexBudget);
             var best = null;
-            for (var k2 = 0; k2 < 2; k2++) {
+            for (var k2 = 0; k2 < active.length; k2++) {
               /* RRSP earns its keep only while the marginal rate is high enough;
                  below the floor a TFSA dollar is worth more over a lifetime. */
               if (rrspRoom[k2] >= step) {
-                var mr = (personTax(runningTaxable[k2], age[k2], 0, person[k2].oas, taxIdx).total - personTax(runningTaxable[k2] - step, age[k2], 0, person[k2].oas, taxIdx).total) / step;
+                var mr = (personTax(runningTaxable[k2], age[k2], 0, person[k2].oas, taxIdx, A.province, person[k2]).total - personTax(runningTaxable[k2] - step, age[k2], 0, person[k2].oas, taxIdx, A.province, person[k2]).total) / step;
                 if (mr >= rrspFloor) {
                   var score = mr - rrspFloor;
                   if (!best || score > best.score) best = { score: score, kind: 'RRSP', k: k2, rate: mr };
@@ -841,17 +1005,21 @@
         planOut[y] = {
           contribs: clone(contribs), deductible: deductible.slice(), employer: employerTotal.slice(),
           hbp: hbpPaid.slice(), rrspRoomAfter: rrspRoom.slice(), tfsaRoomAfter: tfsaRoom.slice(),
-          target: rrspTarget.slice(), pace: rrspPace.slice()
+          target: rrspTarget.slice(), pace: rrspPace.slice(), fhsaRoomAfter:fhsaRoom.slice(), fhsaUsedAfter:fhsaUsed.slice()
         };
       }
 
       var totalContribs = Object.keys(contribs).reduce(function (s, id) { return s + contribs[id]; }, 0);
-      var householdContribCash = totalContribs - employerTotal[0] - employerTotal[1];
+      // CORP contributions are retained business earnings, already net of
+      // operating tax, salary, dividends and employer payroll costs.
+      var corporateContributions = accts.filter(function(ac) { return ac.type === 'CORP'; })
+        .reduce(function(sum,ac) { return sum+(contribs[ac.id] || 0); },0);
+      var householdContribCash = totalContribs - employerTotal[0] - employerTotal[1] - corporateContributions;
 
       /* ---- RRIF conversion + forced minimums ---- */
       var rrifForced = 0;
       accts.forEach(function (ac) {
-        if (ac.type !== 'RRSP') return;
+        if (ac.type !== 'RRSP' && ac.type !== 'DC') return;
         var k = ownerIndex(ac.owner);
         if (age[k] >= 71) ac.isRRIF = true;
         if (!ac.isRRIF || ac.bal <= 0) return;
@@ -877,37 +1045,54 @@
       /* ---- tax helpers ---- */
       function taxableOf(k, extra) {
         var p = person[k];
-        return p.employment + p.cpp + p.oas + p.pension + p.bridge + p.rrif + p.rental + p.dist + p.sale
-          - childcareDeduction[k] - deductible[k] + (extra || 0);
+        return p.employment + p.cpp + p.oas + p.pension + p.bridge + p.rrif + p.rental + p.dist + p.sale + p.eligibleDividends*1.38 + p.nonEligibleDividends*1.15
+          - (single && k === 1 ? 0 : P[k].annualDeductions*inflIdx) - p.cppDeduction - childcareDeduction[k] - deductible[k] + (extra || 0);
       }
       function cashOf(k) {
         var p = person[k];
-        return p.employment + p.cpp + p.oas + p.pension + p.bridge + p.rrif;
+        return p.employment + p.cpp + p.oas + p.pension + p.bridge + p.rrif + p.eligibleDividends + p.nonEligibleDividends - p.payroll;
       }
-      function evalTax(e0, e1) {
+      function evalTax(e0, e1, dividends) {
+        dividends = dividends || [{eligibleDividends:0,nonEligibleDividends:0},{eligibleDividends:0,nonEligibleDividends:0}];
         function eligible(k, extra) {
           var e = person[k].pension + person[k].bridge;
-          if (age[k] >= 65) e += person[k].rrif + Math.max(0, extra);
+          if (age[k] >= 65) e += person[k].rrif;
           return e;
         }
         return householdTax(
-          { taxable: taxableOf(0, e0), age: age[0], oas: person[0].oas, eligiblePension: eligible(0, e0) },
-          { taxable: taxableOf(1, e1), age: age[1], oas: person[1].oas, eligiblePension: eligible(1, e1) },
-          taxIdx, A.optimizePensionSplit
+          Object.assign({},person[0], { taxable: taxableOf(0, e0), eligibleDividends:person[0].eligibleDividends+dividends[0].eligibleDividends, nonEligibleDividends:person[0].nonEligibleDividends+dividends[0].nonEligibleDividends, age: age[0], oas: person[0].oas, eligiblePension: eligible(0, e0) }),
+          Object.assign({},person[1], { taxable: taxableOf(1, e1), eligibleDividends:person[1].eligibleDividends+dividends[1].eligibleDividends, nonEligibleDividends:person[1].nonEligibleDividends+dividends[1].nonEligibleDividends, age: age[1], oas: person[1].oas, eligiblePension: eligible(1, e1) }),
+          taxIdx, A.optimizePensionSplit, A.province, single
         );
       }
+      // Benefits use last year's assessed income; opening income is configurable.
+      function gisIncome(k, extra) {
+        var earned = person[k].employment;
+        var exemption = Math.min(earned,5000) + .5*Math.min(10000,Math.max(0,earned-5000));
+        return Math.max(0,taxableOf(k,extra)-person[k].oas-exemption);
+      }
+      active.forEach(function(k) {
+        if (gisPriorIncome[k] === null) gisPriorIncome[k] = gisIncome(k,0);
+      });
+      var gisHouseholdIncome = gisPriorIncome[0] + (single ? 0 : gisPriorIncome[1]);
+      active.forEach(function(k) {
+        if (A.gisEnabled && P[k].gisEligible && age[k] >= 65 && person[k].oas > 0)
+          person[k].gis = gisBenefit(gisHouseholdIncome,single,!single && person[1-k].oas > 0,Math.pow(1+infl,y-2026));
+      });
+      var gisCash = person[0].gis+person[1].gis;
       function householdCashBase() {
-        return cashOf(0) + cashOf(1) + rentCash + saleProceedsCash - householdContribCash;
+        return cashOf(0) + cashOf(1) + rentCash + saleProceedsCash + fhsaQualifyingCash + gisCash - householdContribCash - corporateDrawCash;
       }
 
       /* ---- withdrawals ---- */
-      var draws = {}, drawTaxable = [0, 0];
+      var draws = {}, drawTaxable = [0, 0], corporateDrawCash = 0;
       function takeFrom(ac, amt) {
         amt = Math.min(amt, ac.bal);
         if (amt <= 0) return 0;
         var k = ownerIndex(ac.owner);
         var taxablePortion = 0;
-        if (ac.type === 'RRSP') taxablePortion = amt;
+        if (ac.type === 'RRSP' || ac.type === 'DC' || ac.type === 'FHSA') taxablePortion = amt;
+        else if (ac.type === 'CORP') { var field = ac.dividendType === 'eligible' ? 'eligibleDividends' : 'nonEligibleDividends'; person[k][field] += amt; corporateDrawCash += amt; }
         else if (ac.type === 'TAXABLE') {
           var gainFrac = ac.bal > 0 ? Math.max(0, (ac.bal - ac.basis) / ac.bal) : 0;
           taxablePortion = amt * gainFrac * CAPITAL_GAINS_INCLUSION;
@@ -921,7 +1106,7 @@
 
       if (anyRetired && (strategy === 'min-tax' || strategy === 'oas-smart')) {
         var ceiling = strategy === 'min-tax' ? FED.brackets[0][0] * taxIdx : OAS_CLAWBACK_THRESHOLD * taxIdx;
-        [0, 1].forEach(function (k) {
+        active.forEach(function (k) {
           if (!retired[k]) return;
           var room = ceiling - taxableOf(k, drawTaxable[k]);
           if (room <= 0) return;
@@ -931,16 +1116,17 @@
       }
 
       var preDrawCash = Object.keys(draws).reduce(function (s, id) { return s + draws[id]; }, 0);
-      function netCashWith(e0, e1, grossExtra) {
-        return householdCashBase() + preDrawCash + grossExtra - evalTax(drawTaxable[0] + e0, drawTaxable[1] + e1).total;
+      function netCashWith(e0, e1, grossExtra, dividends) {
+        return householdCashBase() + preDrawCash + grossExtra - evalTax(drawTaxable[0] + e0, drawTaxable[1] + e1, dividends).total;
       }
       function tryAllocate(gross) {
-        var remaining = gross, tax0 = 0, tax1 = 0, plan = [];
+        var remaining = gross, tax0 = 0, tax1 = 0, plan = [], dividends = [{eligibleDividends:0,nonEligibleDividends:0},{eligibleDividends:0,nonEligibleDividends:0}];
         for (var oi = 0; oi < order.length && remaining > 0.01; oi++) {
           var pool = accts.filter(function (x) { return x.type === order[oi] && x.bal > 0; });
           for (var pi = 0; pi < pool.length && remaining > 0.01; pi++) {
             var ac = pool[pi], amt = Math.min(ac.bal, remaining), k = ownerIndex(ac.owner), tp = 0;
-            if (ac.type === 'RRSP') tp = amt;
+            if (ac.type === 'RRSP' || ac.type === 'DC' || ac.type === 'FHSA') tp = amt;
+            else if (ac.type === 'CORP') { tp = amt*(ac.dividendType === 'eligible' ? 1.38 : 1.15); dividends[k][ac.dividendType === 'eligible' ? 'eligibleDividends' : 'nonEligibleDividends'] += amt; }
             else if (ac.type === 'TAXABLE') {
               var gf = ac.bal > 0 ? Math.max(0, (ac.bal - ac.basis) / ac.bal) : 0;
               tp = amt * gf * CAPITAL_GAINS_INCLUSION;
@@ -950,7 +1136,7 @@
             remaining -= amt;
           }
         }
-        return { plan: plan, gross: gross - remaining, tax0: tax0, tax1: tax1 };
+        return { plan: plan, gross: gross - remaining, tax0: tax0, tax1: tax1, dividends:dividends };
       }
 
       var unfunded = 0;
@@ -965,12 +1151,12 @@
         for (var it = 0; it < iters; it++) {
           var mid = (lo + hi) / 2;
           var trial = tryAllocate(mid);
-          if (netCashWith(trial.tax0, trial.tax1, trial.gross) < spendTarget) lo = mid; else hi = mid;
+          if (netCashWith(trial.tax0, trial.tax1, trial.gross, trial.dividends) < spendTarget) lo = mid; else hi = mid;
         }
         var fin = tryAllocate(hi);
-        if (netCashWith(fin.tax0, fin.tax1, fin.gross) < spendTarget - 1) {
+        if (netCashWith(fin.tax0, fin.tax1, fin.gross, fin.dividends) < spendTarget - 1) {
           fin = tryAllocate(availableTotal);
-          unfunded = spendTarget - netCashWith(fin.tax0, fin.tax1, fin.gross);
+          unfunded = spendTarget - netCashWith(fin.tax0, fin.tax1, fin.gross, fin.dividends);
         }
         fin.plan.forEach(function (step2) { takeFrom(step2.ac, step2.amt); });
       }
@@ -983,9 +1169,9 @@
       var refund = 0;
       if (A.reinvestRefund && (deductible[0] + deductible[1]) > 0) {
         var withoutDeduction = householdTax(
-          { taxable: taxableOf(0, drawTaxable[0]) + deductible[0], age: age[0], oas: person[0].oas, eligiblePension: person[0].pension + person[0].bridge },
-          { taxable: taxableOf(1, drawTaxable[1]) + deductible[1], age: age[1], oas: person[1].oas, eligiblePension: person[1].pension + person[1].bridge },
-          taxIdx, A.optimizePensionSplit
+          Object.assign({},person[0], { taxable: taxableOf(0, drawTaxable[0]) + deductible[0], age: age[0], oas: person[0].oas, eligiblePension: person[0].pension + person[0].bridge }),
+          Object.assign({},person[1], { taxable: taxableOf(1, drawTaxable[1]) + deductible[1], age: age[1], oas: person[1].oas, eligiblePension: person[1].pension + person[1].bridge }),
+          taxIdx, A.optimizePensionSplit, A.province, single
         );
         refund = Math.max(0, withoutDeduction.total - taxResult.total);
       }
@@ -1000,7 +1186,7 @@
       if (!anyRetired) reinvestable = Math.min(reinvestable, saleProceedsCash);
       if (A.reinvestSurplus && reinvestable > 1) {
         surplus = reinvestable;
-        for (var sk = 0; sk < 2; sk++) {
+        for (var sk = 0; sk < active.length; sk++) {
           if (surplus <= 0) break;
           var put = Math.min(surplus, tfsaRoom[sk]);
           tfsaOf[sk].bal += put; tfsaOf[sk].basis += put; tfsaRoom[sk] -= put; surplus -= put;
@@ -1015,20 +1201,28 @@
         var contrib = contribs[ac.id] || 0;
         ac.bal += contrib; ac.basis += contrib;
         var growth = ac.bal * (ac.rate + rateAdj + shock);
+        // Effective corporate tax drag on investment returns; no personal tax until distribution.
+        var corporateTax = ac.type === 'CORP' ? Math.max(0,growth)*ac.corporateTaxRate : 0;
+        growth -= corporateTax;
         ac.bal = Math.max(0, ac.bal + growth);
         if (startBal > 1 || ac.bal > 1 || contrib > 1) {
           acctRows.push({
             name: ac.name, owner: ac.owner, type: ac.isRRIF ? 'RRIF' : ac.type,
             start: startBal, forced: ac.forcedThisYear || 0, draw: draws[ac.id] || 0,
-            contrib: contrib, growth: growth, end: ac.bal
+            contrib: contrib, growth: growth, end: ac.bal, corporateTax:corporateTax, qualifyingWithdrawal:ac.qualifyingThisYear || 0
           });
         }
-        ac.forcedThisYear = 0;
+        ac.forcedThisYear = 0; ac.qualifyingThisYear = 0;
       });
 
       priorEarned = [person[0].employment + Math.max(0, person[0].rental), person[1].employment + Math.max(0, person[1].rental)];
-      priorPA = employerTotal.slice();
-      for (var hk = 0; hk < 2; hk++) if (hbpPaid[hk] > 0) hbpLeft[hk]--;
+      priorPA = employerTotal.map(function(amount,k) {
+        return amount + P[k].pensionAdjustment + accts.filter(function(ac) { return ac.type === 'DC' && ownerIndex(ac.owner) === k; })
+          .reduce(function(sum,ac) { return sum+(contribs[ac.id] || 0); },0)
+          - accts.filter(function(ac) { return ac.type === 'DC' && ownerIndex(ac.owner) === k; }).reduce(function(sum,ac) { return sum+Math.min(person[k].employment*ac.employerMatchPct,contribs[ac.id] || 0); },0);
+      });
+      active.forEach(function(k) { gisPriorIncome[k] = gisIncome(k,drawTaxable[k]); });
+      for (var hk = 0; hk < active.length; hk++) if (hbpPaid[hk] > 0) hbpLeft[hk]--;
 
       var portfolio = accts.reduce(function (s, ac) { return s + Math.max(0, ac.bal); }, 0);
       var netWorth = portfolio + principalEquity + rentalEquity - otherDebt;
@@ -1040,6 +1234,8 @@
       years.push({
         year: y, ages: age.slice(), retired: retired.slice(), deflator: 1 / inflIdx,
         employment: person[0].employment + person[1].employment,
+        dividends:person[0].eligibleDividends+person[0].nonEligibleDividends+person[1].eligibleDividends+person[1].nonEligibleDividends-corporateDrawCash,
+        gis:gisCash, payrollCPP:person[0].payroll+person[1].payroll, fhsaQualifyingWithdrawal:fhsaQualifyingCash, fhsaRoom:fhsaRoom.slice(),
         cpp: person[0].cpp + person[1].cpp,
         oas: person[0].oas + person[1].oas,
         pension: person[0].pension + person[1].pension + person[0].bridge + person[1].bridge,
@@ -1047,7 +1243,7 @@
         bridge: person[0].bridge + person[1].bridge,
         rentGross: rentGross, rentOpex: rentOpex, rentInterest: rentInterest,
         rentPayment: rentPayment, rentCash: rentCash, rentTaxable: rentTaxable,
-        ccaClaim: ccaClaim, uccRemaining: rental ? rental.ucc : 0, ccaClaimedToDate: rental ? rental.ccaClaimed : 0,
+        ccaClaim: ccaClaim, uccRemaining: rentals.reduce(function(s,p) { return s+(p.sold ? 0 : p.ucc); },0), ccaClaimedToDate: rentals.reduce(function(s,p) { return s+p.ccaClaimed; },0), rentals:rentalRows,
         rrifForced: rrifForced, discretionaryDraw: totalDrawn, totalWithdrawn: totalDrawn + rrifForced,
         contributions: totalContribs, contributionsFromCash: householdContribCash,
         employerContributions: employerTotal[0] + employerTotal[1],
@@ -1061,8 +1257,8 @@
         totalTax: taxResult.total, pensionSplit: taxResult.split,
         taxableIncome: [taxableOf(0, drawTaxable[0]), taxableOf(1, drawTaxable[1])],
         marginalRates: [
-          marginalRate(taxableOf(0, drawTaxable[0]), age[0], 0, person[0].oas, taxIdx),
-          marginalRate(taxableOf(1, drawTaxable[1]), age[1], 0, person[1].oas, taxIdx)
+          marginalRate(taxableOf(0, drawTaxable[0]), age[0], 0, person[0].oas, taxIdx, A.province, person[0]),
+          marginalRate(taxableOf(1, drawTaxable[1]), age[1], 0, person[1].oas, taxIdx, A.province, person[1])
         ],
         spendTarget: spendTarget, netCash: netCash, unfunded: unfunded, surplus: surplus,
         portfolio: portfolio, principalEquity: principalEquity, rentalEquity: rentalEquity,
@@ -1070,12 +1266,13 @@
         householdDebtPayments: householdDebtPayments,
         saleEvents: saleEvents, saleProceeds: saleProceedsCash, saleCapitalLoss: saleCapitalLoss,
         accounts: acctRows, debts: debtRows,
-        person: [0, 1].map(function (k) {
+        person: active.map(function (k) {
           var pt = k === 0 ? taxResult.p1 : taxResult.p2;
           return {
             name: P[k].name, employment: person[k].employment, cpp: person[k].cpp, oas: person[k].oas,
             pension: person[k].pension, pension2: person[k].pension2, bridge: person[k].bridge, rrif: person[k].rrif,
-            rental: person[k].rental, sale: person[k].sale,
+            rental: person[k].rental, sale: person[k].sale, gis:person[k].gis, payrollCPP:person[k].payroll,
+            eligibleDividends:person[k].eligibleDividends, nonEligibleDividends:person[k].nonEligibleDividends, fhsaRoom:fhsaRoom[k],
             childcare: childcareDeduction[k], deductible: deductible[k],
             rrspTarget: rrspTarget[k], rrspPace: rrspPace[k],
             tax: pt.income, clawback: pt.clawback, rrspRoom: rrspRoom[k], tfsaRoom: tfsaRoom[k]
@@ -1160,9 +1357,10 @@
 
   /* ------------------------------------------------------------- timeline  */
   function buildTimeline(cfg, sim) {
+    cfg = normalizeConfig(cfg);
     var P = cfg.incomes, ev = [];
     function add(year, label) { if (year) ev.push({ year: year, label: label }); }
-    [0, 1].forEach(function (k) {
+    (cfg.assumptions.householdType === 'single' ? [0] : [0,1]).forEach(function (k) {
       add(P[k].birthYear + P[k].targetRetireAge, P[k].name + ' retires (age ' + P[k].targetRetireAge + ')');
       add(P[k].birthYear + P[k].cppStartAge, P[k].name + ' starts CPP (age ' + P[k].cppStartAge + ')');
       add(P[k].birthYear + P[k].oasStartAge, P[k].name + ' starts OAS (age ' + P[k].oasStartAge + ')');
@@ -1174,6 +1372,12 @@
       }
       if (P[k].hbpYears > 0) add(sim.startYear + P[k].hbpYears, P[k].name + ' finishes HBP repayments');
       if (P[k].pension2Amount > 0) add(P[k].birthYear + P[k].pension2StartAge, P[k].name + ' starts ' + P[k].pension2Name);
+    });
+    cfg.dbPensions.forEach(function(plan) {
+      var p = P.find(function(p) { return p.name === plan.owner; });
+      if (!p || (cfg.assumptions.householdType === 'single' && p !== P[0])) return;
+      add(p.birthYear+plan.startAge,p.name+' starts '+plan.name);
+      if (plan.bridge > 0) add(p.birthYear+plan.bridgeCutoffAge,plan.name+' bridge ends');
     });
     var lastChildcare = null;
     sim.years.forEach(function (r) { if (r.childcareSpend > 0) lastChildcare = r.year; });
@@ -1197,6 +1401,7 @@
     buildSchedule: buildSchedule, rrifFactor: rrifFactor,
     childcareSpend: childcareSpend, childcareCap: childcareCap,
     WITHDRAWAL_ORDERS: WITHDRAWAL_ORDERS, TAX_BASE_YEAR: TAX_BASE_YEAR,
+    PROVINCES: PROVINCES, gisBenefit:gisBenefit, payrollCPP:payrollCPP,
     FED: FED, ONT: ONT, OAS_CLAWBACK_THRESHOLD: OAS_CLAWBACK_THRESHOLD,
     RRSP_DOLLAR_LIMIT: RRSP_DOLLAR_LIMIT, TFSA_ANNUAL_ROOM: TFSA_ANNUAL_ROOM
   };

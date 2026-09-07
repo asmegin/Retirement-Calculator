@@ -1,7 +1,7 @@
 'use strict';
 /* =============================================================================
    Lifecycle Drawdown Engine — server
-   Local-only by design: no authentication, intended to sit behind your LAN.
+   LAN access by default; optional Basic Auth covers HTTP and Socket.IO.
    Set BIND=127.0.0.1 if you want it reachable only from the host itself.
    ========================================================================== */
 const express = require('express');
@@ -10,6 +10,7 @@ const { Server } = require('socket.io');
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
+const crypto = require('crypto');
 const Engine = require('./public/engine.js');
 
 const PORT = parseInt(process.env.PORT, 10) || 3333;
@@ -23,6 +24,31 @@ const KEEP_BACKUPS = 30;
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+const authEnabled = process.env.BASIC_AUTH_ENABLED === 'true';
+if (authEnabled && (!process.env.BASIC_AUTH_USER || !process.env.BASIC_AUTH_PASS)) {
+  throw new Error('BASIC_AUTH_USER and BASIC_AUTH_PASS are required when Basic Auth is enabled.');
+}
+function equalCredential(actual, expected) {
+  const digest = value => crypto.createHash('sha256').update(value).digest();
+  return crypto.timingSafeEqual(digest(actual), digest(expected));
+}
+function basicAuth(req, res, next) {
+  if (!authEnabled) return next();
+  const header = req.headers.authorization || '';
+  const match = /^Basic ([A-Za-z0-9+/]+={0,2})$/i.exec(header);
+  if (match) {
+    const credentials = Buffer.from(match[1], 'base64').toString('utf8');
+    const colon = credentials.indexOf(':');
+    const userOK = equalCredential(credentials.slice(0, colon), process.env.BASIC_AUTH_USER);
+    const passOK = equalCredential(credentials.slice(colon + 1), process.env.BASIC_AUTH_PASS);
+    if (colon >= 0 && userOK && passOK) return next();
+  }
+  res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Retirement calculator", charset="UTF-8"', 'Cache-Control':'no-store' });
+  res.end('Authentication required');
+}
+app.use(basicAuth);
+io.engine.use(basicAuth);
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -46,7 +72,9 @@ async function loadConfig() {
     }
     return normalized;
   } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
     const fresh = Engine.normalizeConfig(Engine.defaultConfig());
+    fresh.onboardingComplete = false;
     await fsp.writeFile(CONFIG_FILE, JSON.stringify(fresh, null, 2));
     console.log('No usable config found — wrote defaults to', CONFIG_FILE);
     return fresh;
@@ -77,6 +105,7 @@ async function prune() {
 async function saveConfig(incoming) {
   await ensureDirs();
   const normalized = Engine.normalizeConfig(incoming);
+  normalized.onboardingComplete = true;
   /* Reject anything the engine cannot actually run, before it hits disk. */
   Engine.simulate(normalized);
   await backup(null);
@@ -177,6 +206,8 @@ app.get('/api/projection', async (req, res) => {
       years: sim.years.map(r => ({
         year: r.year, ages: r.ages, employment: Math.round(r.employment),
         cpp: Math.round(r.cpp), oas: Math.round(r.oas), pension: Math.round(r.pension),
+        gis: Math.round(r.gis), dividends: Math.round(r.dividends), payrollCPP: Math.round(r.payrollCPP),
+        fhsaQualifyingWithdrawal: Math.round(r.fhsaQualifyingWithdrawal), rentals: r.rentals,
         rentalCash: Math.round(r.rentCash), rrifMinimum: Math.round(r.rrifForced),
         portfolioDraw: Math.round(r.discretionaryDraw), tax: Math.round(r.totalTax),
         afterTaxCash: Math.round(r.netCash), spendingGoal: Math.round(r.spendTarget),

@@ -6,7 +6,7 @@
 <title>Lifecycle Drawdown Engine</title>
 <script src="/socket.io/socket.io.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="/engine.js?v=3"></script>
+<script src="/engine.js?v=4"></script>
 <style>
   :root{
     --bg:#0b1329; --panel:#16223f; --panel2:#0f1a33; --line:rgba(255,255,255,.06);
@@ -69,6 +69,8 @@
   .pill{font-size:.68rem;font-weight:700;padding:.15rem .45rem;border-radius:99px;background:rgba(148,163,184,.15);color:var(--muted)}
   @media (max-width:640px){body{padding:1rem}.chart-container{height:280px}}
   @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  [hidden]{display:none!important}
+  dialog::backdrop{background:rgba(0,0,0,.75)}
   @media print{.tabs,.controls,.btn,.header a{display:none}.panel{display:block!important}.panel[hidden]{display:block!important}}
 </style>
 </head>
@@ -80,12 +82,14 @@
     <span class="toggle"><input type="checkbox" id="real-toggle" checked><label for="real-toggle" style="cursor:pointer">Today's dollars</label></span>
     <button class="btn ghost" onclick="exportCsv()">Export ledger</button>
     <button class="btn ghost" onclick="window.print()">Print</button>
+    <button class="btn ghost" onclick="openSetupWizard()">Setup Wizard</button>
     <a href="/config" class="btn">Configure</a>
   </div>
 </div>
 
 <div id="status-banner" class="alert-banner success"><span id="banner-text">Running simulation…</span></div>
 <div id="warnings"></div>
+<p id="household-summary" style="color:var(--muted);font-size:.8rem"></p>
 
 <div class="metrics-grid">
   <div class="metric-card"><label>After-tax spending goal</label><input type="number" class="val" id="m-goal" step="50" min="0" value="0" aria-label="After-tax spending goal per month"><div class="sub">per month, today&#39;s dollars</div></div>
@@ -200,7 +204,7 @@
     <div class="note">One calendar year per row. Click a row for the full ledger: income by source, tax by person, account movement and debt.</div>
     <table>
       <thead><tr>
-        <th>Year</th><th>Ages</th><th>Employment</th><th>CPP/OAS/Pension</th><th>Rental cash</th>
+        <th>Year</th><th>Ages</th><th>Salary / dividends</th><th>CPP/OAS/GIS/Pension</th><th>Rental cash</th>
         <th>RRIF minimum</th><th>Portfolio draw</th><th>Tax</th><th>After-tax cash</th><th>Spending goal</th><th>Portfolio</th><th>Net worth</th>
       </tr></thead>
       <tbody id="ledger-body"></tbody>
@@ -248,10 +252,17 @@
   <div class="modal-content" id="detail-modal-content"></div>
 </div>
 
+<dialog id="setup-host" aria-label="Setup Wizard" style="width:min(1050px,98vw);height:94vh;padding:0;border:1px solid #334155;background:#16223f;border-radius:12px">
+  <iframe id="setup-frame" title="Household Setup Wizard" style="border:0;width:100%;height:100%"></iframe>
+</dialog>
 <script>
 const socket = io();
 const E = window.RetireEngine;
-let config = null, sim = null, charts = {}, saveTimer = null, scenarioSims = {};
+let config = null, sim = null, charts = {}, saveTimer = null, scenarioSims = {}, wizardOffered = false;
+const isSingle = () => config?.assumptions.householdType === 'single';
+const agesText = r => r.ages.slice(0,isSingle()?1:2).join(' / ');
+function openSetupWizard() { clearTimeout(saveTimer); el('setup-frame').src='/config?wizard=1'; el('setup-host').showModal(); }
+window.addEventListener('message',event=>{if(event.origin===location.origin && event.source===el('setup-frame').contentWindow && event.data?.type==='wizard-closed')el('setup-host').close();});
 
 const CAD = new Intl.NumberFormat('en-CA', {style:'currency', currency:'CAD', maximumFractionDigits:0});
 const fmt = v => CAD.format(isFinite(v) ? v : 0);
@@ -276,6 +287,7 @@ function fillSelect(sel, from, to) {
 fillSelect(el('p1-cpp'), 60, 70); fillSelect(el('p2-cpp'), 60, 70);
 fillSelect(el('p1-oas'), 65, 70); fillSelect(el('p2-oas'), 65, 70);
 fillSelect(el('p2-hoopp'), 50, 70);
+el('p2-hoopp').prepend(new Option('None', ''));
 
 ['p1-cpp','p2-cpp','p1-oas','p2-oas','p2-hoopp','strategy','return-mode','rrsp-floor']
   .forEach(id => el(id).addEventListener('change', onStateChange));
@@ -286,17 +298,23 @@ el('p2-slider').addEventListener('input', e => { el('p2-age-val').textContent = 
 el('spend-slider').addEventListener('input', e => { el('m-goal').value = e.target.value; el('spend-val').textContent = fmt(e.target.value); onStateChange(); });
 el('m-goal').addEventListener('change', e => { const v = Math.max(0, +e.target.value || 0); e.target.value = v; el('spend-slider').value = v; el('spend-val').textContent = fmt(v); onStateChange(); });
 
-socket.on('config_updated', c => { config = c; syncControls(); run(); });
+function receiveConfig(c) { config = E.normalizeConfig(c); syncControls(); run(); if(config.onboardingComplete===false && !wizardOffered){wizardOffered=true;openSetupWizard();} }
+socket.on('config_updated', receiveConfig);
+fetch('/api/config').then(r=>{if(!r.ok)throw new Error('Could not load configuration');return r.json();}).then(c=>{if(!config)receiveConfig(c);}).catch(err=>{el('banner-text').textContent=err.message;});
 
 function syncControls() {
   const P = config.incomes;
+  document.body.classList.toggle('single-household',isSingle());
+  el('p2-slider').closest('.ctl').hidden=isSingle();
+  ['ch-p2-tax','ch-p2-mr'].forEach(id=>el(id).hidden=isSingle());
+  el('household-summary').textContent = `${isSingle()?'Single':'Couple'} | ${E.PROVINCES[config.assumptions.province].name} | Tax schedules: 2025 base, projected with inflation. GIS and corporate tax are planning estimates.`;
   el('lbl-p1').childNodes[0].nodeValue = P[0].name + ' retirement age: ';
   el('lbl-p2').childNodes[0].nodeValue = P[1].name + ' retirement age: ';
   el('p1-slider').value = P[0].targetRetireAge; el('p1-age-val').textContent = P[0].targetRetireAge;
   el('p2-slider').value = P[1].targetRetireAge; el('p2-age-val').textContent = P[1].targetRetireAge;
   el('p1-cpp').value = P[0].cppStartAge; el('p2-cpp').value = P[1].cppStartAge;
   el('p1-oas').value = P[0].oasStartAge; el('p2-oas').value = P[1].oasStartAge;
-  el('p2-hoopp').value = P[1].hooppStartAge || 55;
+  el('p2-hoopp').value = P[1].hooppStartAge || '';
   el('strategy').value = config.assumptions.withdrawalStrategy;
   el('return-mode').value = ['conservative','bad-decade'].includes(config.assumptions.returnMode) ? config.assumptions.returnMode : 'deterministic';
   /* keep any custom floor set on the config page selectable here */
@@ -320,12 +338,12 @@ function syncControls() {
 function onStateChange() {
   if (!config) return;
   config.incomes[0].targetRetireAge = +el('p1-slider').value;
-  config.incomes[1].targetRetireAge = +el('p2-slider').value;
+  if (!isSingle()) config.incomes[1].targetRetireAge = +el('p2-slider').value;
   config.incomes[0].cppStartAge = +el('p1-cpp').value;
-  config.incomes[1].cppStartAge = +el('p2-cpp').value;
+  if (!isSingle()) config.incomes[1].cppStartAge = +el('p2-cpp').value;
   config.incomes[0].oasStartAge = +el('p1-oas').value;
-  config.incomes[1].oasStartAge = +el('p2-oas').value;
-  config.incomes[1].hooppStartAge = +el('p2-hoopp').value;
+  if (!isSingle()) config.incomes[1].oasStartAge = +el('p2-oas').value;
+  if (!isSingle()) config.incomes[1].hooppStartAge = el('p2-hoopp').value === '' ? null : +el('p2-hoopp').value;
   config.assumptions.withdrawalStrategy = el('strategy').value;
   config.assumptions.returnMode = el('return-mode').value;
   config.assumptions.rrspMinMarginalRate = +el('rrsp-floor').value;
@@ -366,6 +384,7 @@ const baseOpts = () => ({
   scales:{ x:axisX, y:axisMoney }
 });
 function upsert(key, canvasId, cfg) {
+  if (isSingle()) cfg.data.datasets = cfg.data.datasets.filter(d=>!d.person2);
   if (charts[key]) charts[key].destroy();
   charts[key] = new Chart(document.getElementById(canvasId).getContext('2d'), cfg);
 }
@@ -384,10 +403,10 @@ function run() {
   if (sim.depletedYear) {
     const r = years.find(x => x.year === sim.depletedYear);
     banner.className = 'alert-banner danger';
-    text.textContent = `Spending goal is not fully funded from ${sim.depletedYear} (${P[0].name} ${r.ages[0]}, ${P[1].name} ${r.ages[1]}).`;
+    text.textContent = `Spending goal is not fully funded from ${sim.depletedYear} (${r.person.map((p,i)=>p.name+' '+r.ages[i]).join(', ')}).`;
     el('m-depleted').textContent = sim.depletedYear;
     el('m-depleted').style.color = 'var(--danger)';
-    el('m-depleted-sub').textContent = `ages ${r.ages[0]} / ${r.ages[1]}`;
+    el('m-depleted-sub').textContent = `ages ${agesText(r)}`;
   } else {
     banner.className = 'alert-banner success';
     text.textContent = `Spending goal is funded every year through age ${config.assumptions.targetDeathAge}.`;
@@ -443,9 +462,12 @@ function run() {
   upsert('cf', 'chart-cashflow', {
     type:'bar',
     data:{ labels, datasets:[
+      { label:'Dividends', data:years.map(r=>D(r.dividends,r)), backgroundColor:'#eab308',stack:'i' },
+      { label:'FHSA home purchase withdrawal', data:years.map(r=>D(r.fhsaQualifyingWithdrawal,r)),backgroundColor:'#14b8a6',stack:'i' },
+      { label:'CPP/QPP contributions',data:years.map(r=>-D(r.payrollCPP,r)),backgroundColor:'#fb7185',stack:'cost' },
       { label:'Employment', data: years.map(r=>D(r.employment,r)), backgroundColor:'#64748b', stack:'i' },
-      { label:'CPP + OAS', data: years.map(r=>D(r.cpp+r.oas,r)), backgroundColor:'#22c55e', stack:'i' },
-      { label:'HOOPP', data: years.map(r=>D(r.pension - r.pension2,r)), backgroundColor:'#a78bfa', stack:'i' },
+      { label:'CPP + OAS + GIS', data: years.map(r=>D(r.cpp+r.oas+r.gis,r)), backgroundColor:'#22c55e', stack:'i' },
+      { label:'DB pensions', data: years.map(r=>D(r.pension - r.pension2,r)), backgroundColor:'#a78bfa', stack:'i' },
       { label:'Other pensions', data: years.map(r=>D(r.pension2,r)), backgroundColor:'#c4b5fd', stack:'i' },
       { label:'Rental cash flow', data: years.map(r=>D(r.rentCash,r)), backgroundColor:'#f97316', stack:'i' },
       { label:'Sale proceeds', data: years.map(r=>D(r.saleProceeds,r)), backgroundColor:'#eab308', stack:'i' },
@@ -463,9 +485,12 @@ function run() {
     type:'bar',
     data:{ labels: working.map(r=>r.year), datasets:[
       { label:P[0].name+' RRSP', data: working.map(r=>D(sumContrib(r,'RRSP',P[0].name),r)), backgroundColor:'#38bdf8', stack:'c' },
-      { label:P[1].name+' RRSP', data: working.map(r=>D(sumContrib(r,'RRSP',P[1].name),r)), backgroundColor:'#0ea5e9', stack:'c' },
+      { person2:true, label:P[1].name+' RRSP', data: working.map(r=>D(sumContrib(r,'RRSP',P[1].name),r)), backgroundColor:'#0ea5e9', stack:'c' },
       { label:P[0].name+' TFSA', data: working.map(r=>D(sumContrib(r,'TFSA',P[0].name),r)), backgroundColor:'#22c55e', stack:'c' },
-      { label:P[1].name+' TFSA', data: working.map(r=>D(sumContrib(r,'TFSA',P[1].name),r)), backgroundColor:'#4ade80', stack:'c' },
+      { person2:true, label:P[1].name+' TFSA', data: working.map(r=>D(sumContrib(r,'TFSA',P[1].name),r)), backgroundColor:'#4ade80', stack:'c' },
+      { label:'FHSA', data:working.map(r=>D(sumContrib(r,'FHSA',null),r)),backgroundColor:'#14b8a6',stack:'c' },
+      { label:'Corporate', data:working.map(r=>D(sumContrib(r,'CORP',null),r)),backgroundColor:'#eab308',stack:'c' },
+      { label:'DC pension', data:working.map(r=>D(sumContrib(r,'DC',null),r)),backgroundColor:'#c4b5fd',stack:'c' },
       { label:'Non-registered', data: working.map(r=>D(sumContrib(r,'TAXABLE',null),r)), backgroundColor:'#f97316', stack:'c' },
       { label:'Refund generated', type:'line', data: working.map(r=>D(r.refund,r)), borderColor:'#a78bfa', borderWidth:3, pointRadius:0, tension:.1 }
     ]},
@@ -475,7 +500,7 @@ function run() {
   el('contrib-body').innerHTML = working.map(r => `<tr>
     <td>${r.year}</td>
     <td>${fmt(D(r.taxableIncome[0],r))}</td><td>${pct(r.marginalRates[0])}</td>
-    <td>${fmt(D(r.taxableIncome[1],r))}</td><td>${pct(r.marginalRates[1])}</td>
+    ${isSingle()?'':`<td>${fmt(D(r.taxableIncome[1],r))}</td><td>${pct(r.marginalRates[1])}</td>`}
     <td style="color:var(--violet);font-weight:700">${(r.rrspTarget[0]+r.rrspTarget[1]) > 0 ? fmt(D(r.rrspTarget[0]+r.rrspTarget[1],r)) : '—'}</td>
     <td style="color:var(--accent)">${fmt(D(sumContrib(r,'RRSP',null),r))}</td>
     <td style="color:var(--green)">${fmt(D(sumContrib(r,'TFSA',null),r))}</td>
@@ -483,8 +508,8 @@ function run() {
     <td>${fmt(D(r.hbpRepayments,r))}</td>
     <td style="color:var(--violet)">${fmt(D(r.refund,r))}</td>
     <td>${r.childcareClaim > 0 ? fmt(D(r.childcareClaim,r)) + (r.childcareClaim < r.childcareSpend ? ' <span class="pill">capped</span>' : '') : '—'}</td>
-    <td>${fmt(D(r.rrspRoom[0],r))} / ${fmt(D(r.rrspRoom[1],r))}</td>
-    <td>${fmt(D(r.tfsaRoom[0],r))} / ${fmt(D(r.tfsaRoom[1],r))}</td>
+    <td>${r.rrspRoom.slice(0,isSingle()?1:2).map(v=>fmt(D(v,r))).join(' / ')}</td>
+    <td>${r.tfsaRoom.slice(0,isSingle()?1:2).map(v=>fmt(D(v,r))).join(' / ')}</td>
   </tr>`).join('');
 
   renderTargetCard(years);
@@ -497,7 +522,7 @@ function renderTargetCard(years) {
   const now = new Date().getFullYear();
   const r = years.find(x => x.year === now) || years[0];
   const P = config.incomes;
-  const rows = [0,1]
+  const rows = (isSingle()?[0]:[0,1])
     .filter(k => r.rrspTarget[k] > 0 || r.rrspPace[k] > 0)
     .map(k => {
       const gap = r.rrspTarget[k] - r.rrspPace[k];
@@ -532,9 +557,9 @@ function renderLedger(years) {
   el('ledger-body').innerHTML = years.map(r => `
     <tr class="clickable ${r.unfunded > 1 ? 'short' : ''} ${r.saleEvents.length ? 'sale' : ''}" onclick="showYear(${r.year})">
       <td>${r.year}${r.saleEvents.length ? ' <span class="pill">sale</span>' : ''}</td>
-      <td>${r.ages[0]} / ${r.ages[1]}</td>
-      <td>${fmt(D(r.employment,r))}</td>
-      <td>${fmt(D(r.cpp + r.oas + r.pension,r))}</td>
+      <td>${agesText(r)}</td>
+      <td>${fmt(D(r.employment+r.dividends,r))}</td>
+      <td>${fmt(D(r.cpp + r.oas + r.pension + r.gis,r))}</td>
       <td>${fmt(D(r.rentCash,r))}</td>
       <td>${fmt(D(r.rrifForced,r))}</td>
       <td style="color:var(--orange)">${fmt(D(r.discretionaryDraw,r))}</td>
@@ -549,7 +574,7 @@ function renderLedger(years) {
 function showYear(y) {
   const r = sim.years.find(x => x.year === y); if (!r) return;
   const P = config.incomes;
-  let h = `<h2 style="margin:0;color:var(--accent)">${y} &middot; ages ${r.ages[0]} / ${r.ages[1]}</h2>
+  let h = `<h2 style="margin:0;color:var(--accent)">${y} &middot; ages ${agesText(r)}</h2>
     <div style="color:var(--muted);font-size:.85rem;margin-top:.35rem">
       After-tax cash ${fmt(r.netCash)} against a goal of ${fmt(r.spendTarget)}
       ${r.unfunded > 1 ? `<span style="color:#fca5a5"> &mdash; short by ${fmt(r.unfunded)}</span>` : ''}
@@ -576,7 +601,7 @@ function showYear(y) {
   h += `<div class="modal-header">Income and tax by person</div>`;
   r.person.forEach((p, i) => {
     h += `<div class="modal-row"><span style="font-weight:700">${p.name}</span><span class="pill">marginal ${pct(r.marginalRates[i])}</span></div>`;
-    [['Employment',p.employment],['CPP',p.cpp],['OAS',p.oas],['HOOPP lifetime',p.pension - p.pension2],['Other pension',p.pension2],['HOOPP bridge',p.bridge],['RRIF minimum',p.rrif],['Rental income',p.rental],['Sale income',p.sale]]
+    [['Employment',p.employment],['Eligible dividends',p.eligibleDividends],['Non-eligible dividends',p.nonEligibleDividends],['GIS',p.gis],['CPP/QPP contributions',-p.payrollCPP],['CPP',p.cpp],['OAS',p.oas],['DB lifetime',p.pension - p.pension2],['Other pension',p.pension2],['DB bridge',p.bridge],['RRIF minimum',p.rrif],['Rental income',p.rental],['Sale income',p.sale]]
       .filter(x => Math.abs(x[1]) > 1)
       .forEach(x => h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">${x[0]}</span><span style="color:var(--green)">${fmt(x[1])}</span></div>`);
     if (p.childcare > 1) h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Childcare deduction</span><span style="color:var(--accent)">-${fmt(p.childcare)}</span></div>`;
@@ -592,6 +617,11 @@ function showYear(y) {
   if (r.childcareClaim > 0 && r.childcareClaim < r.childcareSpend)
     h += `<div class="modal-row"><span style="color:#fde047">Childcare spend ${fmt(r.childcareSpend)} exceeds the CRA cap of ${fmt(r.childcareCap)}</span><span style="color:#fde047">${fmt(r.childcareSpend - r.childcareClaim)} not deductible</span></div>`;
 
+  if(r.fhsaQualifyingWithdrawal>0) h+=`<div class="modal-row"><span>FHSA qualifying withdrawal (tax free)</span><span>${fmt(r.fhsaQualifyingWithdrawal)}</span></div>`;
+  if (r.rentals.length) {
+    h+='<div class="modal-header">Each rental property</div>';
+    r.rentals.forEach(p=>{ h+=`<div class="modal-row"><span>${p.name}: cash ${fmt(p.cash)} &middot; taxable ${fmt(p.taxable)}</span><span>CCA ${fmt(p.cca)} &middot; UCC ${fmt(p.ucc)}</span></div>`; });
+  }
   if (r.rentGross > 0) {
     h += `<div class="modal-header">Rental property</div>`;
     h += `<div class="modal-row"><span>Rent collected (after vacancy)</span><span>${fmt(r.rentGross)}</span></div>`;
@@ -608,6 +638,8 @@ function showYear(y) {
     const bits = [];
     if (a.contrib > 1) bits.push(`<span style="color:var(--accent)">+${fmt(a.contrib)} in</span>`);
     if (a.forced > 1) bits.push(`<span style="color:#0ea5e9">-${fmt(a.forced)} RRIF min</span>`);
+    if (a.corporateTax > 1) bits.push(`<span>Corporate tax ${fmt(a.corporateTax)}</span>`);
+    if (a.qualifyingWithdrawal > 1) bits.push(`<span>Home purchase ${fmt(a.qualifyingWithdrawal)}</span>`);
     if (a.draw > 1) bits.push(`<span style="color:var(--orange)">-${fmt(a.draw)} drawn</span>`);
     bits.push(`<span style="color:${a.growth>=0?'var(--green)':'#fca5a5'}">${a.growth>=0?'+':''}${fmt(a.growth)} growth</span>`);
     h += `<div style="margin-bottom:.9rem;padding-bottom:.9rem;border-bottom:1px solid var(--line)">
@@ -644,13 +676,14 @@ function exportCsv() {
   const cols = ['year','age1','age2','employment','cpp','oas','hoopp','other_pension','rental_cash','rental_taxable','cca_claimed',
     'rrif_minimum','portfolio_draw','rrsp_target','rrsp_contrib','tfsa_contrib','employer_contrib','hbp_repayment','refund',
     'childcare_claim','marginal_1','marginal_2','income_tax','oas_clawback','after_tax_cash','spending_goal','shortfall',
-    'sale_proceeds','investments','home_equity','rental_equity','debt','net_worth','deflator'];
+    'sale_proceeds','investments','home_equity','rental_equity','debt','net_worth','deflator','gis','dividends','cpp_qpp_contributions','fhsa_qualifying_withdrawal'];
   const rows = sim.years.map(r => [r.year,r.ages[0],r.ages[1],r.employment,r.cpp,r.oas,r.pension - r.pension2,r.pension2,r.rentCash,r.rentTaxable,r.ccaClaim,
     r.rrifForced,r.discretionaryDraw,r.rrspTarget[0]+r.rrspTarget[1],sumContrib(r,'RRSP',null),sumContrib(r,'TFSA',null),r.employerContributions,r.hbpRepayments,r.refund,
     r.childcareClaim,r.marginalRates[0],r.marginalRates[1],r.incomeTax,r.oasClawback,r.netCash,r.spendTarget,r.unfunded,
-    r.saleProceeds,r.portfolio,r.principalEquity,r.rentalEquity,r.debt,r.netWorth,r.deflator]
+    r.saleProceeds,r.portfolio,r.principalEquity,r.rentalEquity,r.debt,r.netWorth,r.deflator,r.gis,r.dividends,r.payrollCPP,r.fhsaQualifyingWithdrawal]
+    .filter((v,i)=>!isSingle() || ![2,21].includes(i))
     .map(v => typeof v === 'number' ? (Math.abs(v) < 2 && v !== 0 ? v.toFixed(4) : Math.round(v)) : v).join(','));
-  const blob = new Blob([cols.join(',') + '\n' + rows.join('\n')], {type:'text/csv'});
+  const blob = new Blob([cols.filter((v,i)=>!isSingle() || ![2,21].includes(i)).join(',') + '\n' + rows.join('\n')], {type:'text/csv'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'retirement-ledger-' + new Date().toISOString().slice(0,10) + '.csv';
