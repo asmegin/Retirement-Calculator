@@ -107,7 +107,7 @@ async function saveConfig(incoming) {
   const normalized = Engine.normalizeConfig(incoming);
   normalized.onboardingComplete = true;
   /* Reject anything the engine cannot actually run, before it hits disk. */
-  Engine.simulate(normalized);
+  if(!Engine.simulate(normalized).years.length)throw new Error('Choose a planning age that extends into the current year.');
   await backup(null);
   await fsp.writeFile(CONFIG_FILE, JSON.stringify(normalized, null, 2));
   io.emit('config_updated', normalized);
@@ -124,6 +124,7 @@ async function writeScenarios(list) {
 }
 
 /* --------------------------------------------------------------- routes  */
+app.get('/api/system',(req,res)=>res.json({mode:'server',authEnabled,authManagedByEnvironment:true,port:PORT}));
 app.get('/api/config', async (req, res) => {
   try { res.json(await loadConfig()); }
   catch (err) { res.status(500).json({ error: err.message }); }
@@ -221,6 +222,7 @@ app.get('/api/projection', async (req, res) => {
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/config', (req, res) => res.sendFile(path.join(__dirname, 'public', 'config.html')));
 app.get('/planning', (req, res) => res.sendFile(path.join(__dirname, 'public', 'planning.html')));
+['household','employment','properties','pensions','detailed','scenarios','withdrawals','app-config'].forEach(page=>app.get('/'+page,(req,res)=>res.sendFile(path.join(__dirname,'public',page+'.html'))));
 
 io.on('connection', async socket => {
   try { socket.emit('config_updated', await loadConfig()); }

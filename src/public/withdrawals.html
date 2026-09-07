@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><script src="./theme.js"></script><script src="./vendor/socket.io.min.js"></script><script src="./storage.js"></script><script src="./worker-bundle.js"></script><script src="./workers.js"></script><meta name="viewport" content="width=device-width,initial-scale=1"><title>Planning workspace · Retirement</title>
+<html lang="en"><head><meta charset="UTF-8"><script src="./theme.js"></script><script src="./vendor/socket.io.min.js"></script><script src="./storage.js"></script><script src="./worker-bundle.js"></script><script src="./workers.js"></script><meta name="viewport" content="width=device-width,initial-scale=1"><title>Withdrawal strategy · Retirement</title>
 <link rel="stylesheet" href="./help.css"><link rel="stylesheet" href="./theme.css">
 <style>*{box-sizing:border-box}body{margin:0}.btn{border:0;cursor:pointer;text-decoration:none;display:inline-block}h3{margin-top:0}input,select{width:100%}[hidden]{display:none!important}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:3px}table{border-collapse:collapse;width:100%;text-align:right}th,td{padding:12px;border-bottom:1px solid var(--line);white-space:nowrap}th:first-child,td:first-child{text-align:left}.card{overflow:visible}.data-scroll{max-height:500px}.data-scroll th{position:sticky;top:0}summary{cursor:pointer;color:var(--accent);font-weight:600;padding:10px 0}</style>
 <script src="./planning-core.js"></script><script src="./engine.js"></script><script src="./help.js"></script>
 <link rel="icon" href="./icons/retirement.svg">
-</head><body data-page="scenarios">
-<header class="workspace-header"><div><div class="eyebrow">PLAN WITH PURPOSE</div><h1>Compare scenarios</h1><p>Try a different retirement date, pension start or home. Your current plan stays separate until you apply a change.</p></div><div><div class="row-actions"><a class="btn ghost" href="./index.html">View overview</a><button class="btn" id="save-plan">Save plan</button></div><p class="status-line" id="save-status" role="status">Changes stay here until you save.</p></div></header>
+</head><body data-page="withdrawals">
+<header class="workspace-header"><div><div class="eyebrow">PLAN WITH PURPOSE</div><h1>Withdrawal strategy</h1><p>Choose how to use your savings. Compare tax, benefits and final net worth before applying a withdrawal plan.</p></div><div><div class="row-actions"><a class="btn ghost" href="./index.html">View overview</a><button class="btn" id="save-plan">Save plan</button></div><p class="status-line" id="save-status" role="status">Changes stay here until you save.</p></div></header>
 <div id="workspace-summary" class="metrics-grid" hidden></div>
 
 <main>

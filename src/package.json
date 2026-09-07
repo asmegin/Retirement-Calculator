@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
+    "build": "node build-client.js",
     "start": "node server.js",
     "test": "node --test test/*.test.js"
   },

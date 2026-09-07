@@ -1,5 +1,5 @@
 'use strict';
-importScripts('/planning-core.js','/engine.js');
+importScripts('./planning-core.js','./engine.js');
 self.onmessage = function(event) {
   const {config, fixedPerson, id} = event.data;
   try {

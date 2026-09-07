@@ -26,6 +26,17 @@ test('2026 payroll uses published CPP/QPP rates, YMPE and second ceiling',()=>{
   near(E.payrollCPP(100000,50,1,'QC',2026,0).total,4895.3);
   near(E.payrollCPP(100000,73,1,'QC',2026,0).total,0);
 });
+test('RRSP goal completion scales actual deposits, deductions and refunds while preserving the full target',()=>{
+  const c=fixture();Object.assign(c.incomes[0],{birthYear:1976,salary:140000,rrspRoomOpening:100000,targetRetireAge:65});
+  Object.assign(c.assumptions,{optimizeContributions:true,reinvestRefund:true,rrspMinMarginalRate:35,rrspGoalCompletion:100});
+  c.accounts=[{name:'RRSP goal',owner:'P0',type:'RRSP',balance:0,growthRate:0,solveToTarget:true}];
+  const full=simulate(c).years[0];c.assumptions.rrspGoalCompletion=85;const partial=simulate(c).years[0];
+  assert.ok(full.rrspTarget[0]>0);near(partial.rrspTarget[0],full.rrspTarget[0]);
+  near(partial.accounts.find(a=>a.name==='RRSP goal').contrib,full.rrspTarget[0]*.85);
+  near(partial.person[0].deductible,full.person[0].deductible*.85);assert.ok(partial.refund<full.refund);
+  c.accounts.push({...c.accounts[0],name:'Second RRSP goal'});near(simulate(c).years[0].person[0].deductible,partial.person[0].deductible);
+  c.assumptions.rrspGoalCompletion=0;near(simulate(c).years[0].person[0].deductible,0);
+});
 test('CSV rejects overlapping annual and monthly data and invalid ceilings',()=>{
   assert.throws(()=>P.parseEarningsCSV('year,month,earnings\n2020,,12000\n2020,1,1000'),/overlapping/);
   assert.throws(()=>P.parseEarningsCSV('year,earnings,ympe\n2020,12000,-1'),/Invalid/);

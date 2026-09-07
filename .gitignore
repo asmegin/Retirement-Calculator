@@ -4,3 +4,4 @@ npm-debug.log*
 
 # Application data & user configs
 data/
+dist/

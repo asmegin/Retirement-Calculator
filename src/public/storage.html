@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Local plan storage</title></head><body><script>
+'use strict';
+addEventListener('message',event=>{
+  if(event.source!==parent||event.data?.channel!=='retirement-storage')return;
+  const {id,op,key,value}=event.data;if(!String(key).startsWith('retirement-'))return;
+  try{let result;if(op==='get')result=JSON.parse(localStorage.getItem(key)||'null');else if(op==='set'){localStorage.setItem(key,JSON.stringify(value));result=value;}parent.postMessage({channel:'retirement-storage',id,value:result},'*');}
+  catch(error){parent.postMessage({channel:'retirement-storage',id,error:error.message},'*');}
+});parent.postMessage({channel:'retirement-storage',ready:true},'*');
+</script></body></html>

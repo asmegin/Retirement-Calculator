@@ -1,6 +1,1 @@
-.setting-help{position:relative;display:inline-block;vertical-align:middle;margin:.25rem;align-self:flex-start;text-align:left}
-.help-button{border:1px solid #64748b;border-radius:50%;background:transparent;color:#bae6fd;width:24px;height:24px;font-weight:700;cursor:pointer;padding:0;font-size:14px}
-.help-button:focus-visible{outline:2px solid #38bdf8;outline-offset:3px}
-.help-tip{display:none;position:absolute;left:0;top:100%;width:min(320px,70vw);padding:.8rem;background:#020617;border:1px solid #64748b;border-radius:8px;color:#e2e8f0;box-shadow:0 6px 24px #0008;font:normal 13px/1.55 system-ui;letter-spacing:normal;text-transform:none;z-index:100;white-space:normal}
-.setting-help:hover .help-tip,.setting-help:focus-within .help-tip,.setting-help.open .help-tip{display:block}
-@media(max-width:640px){.help-tip{position:fixed;left:5vw;top:auto;bottom:1rem;width:90vw;max-height:45vh;overflow:auto}}
+.inline-help{display:block;color:var(--muted,#59677d);font-size:11px;line-height:1.5;font-weight:400;text-transform:none;letter-spacing:0;margin-top:5px;max-width:48em}.check{flex-wrap:wrap}.check .inline-help{flex-basis:100%}.input-group>.hint{display:none}

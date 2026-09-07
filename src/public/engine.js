@@ -246,6 +246,7 @@
       rentalOwnerSplit: clamp(num(a.rentalOwnerSplit, da.rentalOwnerSplit), 0, 100),
       spendingIncludesDebtPayments: a.spendingIncludesDebtPayments !== false,
       applySpendingBeforeRetirement: a.applySpendingBeforeRetirement === true,
+      rrspGoalCompletion:clamp(num(a.rrspGoalCompletion,85),0,100),
       optimizePensionSplit: a.optimizePensionSplit !== false,
       reinvestSurplus: a.reinvestSurplus !== false,
       reinvestPayoffPayments: a.reinvestPayoffPayments !== false,
@@ -1067,19 +1068,23 @@
            Contribute whatever brings this person down to the marginal-rate
            floor. The amount is an output, not an input: the dashboard shows it
            as this year's target so you can true up by the March deadline. */
+        var rrspGoalHandled=[false,false];
         accts.forEach(function (ac) {
           if (!ac.solveToTarget || !A.optimizeContributions) return;
           var k = ownerIndex(ac.owner);
-          if (retired[k] || age[k] > P[k].rrifConversionAge) return;
-          var g = 0;
-          while (rrspRoom[k] >= slice && g++ < 600) {
+          if (retired[k] || age[k] > P[k].rrifConversionAge || rrspGoalHandled[k]) return;
+          rrspGoalHandled[k]=true;
+          var g = 0,goal=0,openingTaxable=runningTaxable[k];
+          while (rrspRoom[k]-goal >= slice && g++ < 600) {
             var m = (personTax(runningTaxable[k], age[k], 0, person[k].oas, taxIdx, A.province, person[k]).total
                    - personTax(runningTaxable[k] - slice, age[k], 0, person[k].oas, taxIdx, A.province, person[k]).total) / slice;
             if (m < rrspFloor) break;
-            addContrib(ac, slice, true);
+            goal+=slice;
             runningTaxable[k] -= slice;
             rrspTarget[k] += slice;
           }
+          var expected=goal*A.rrspGoalCompletion/100;
+          addContrib(ac,expected,true);runningTaxable[k]=openingTaxable-expected;
         });
 
         /* ---- the optimizer ---- */

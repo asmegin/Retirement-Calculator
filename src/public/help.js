@@ -112,19 +112,21 @@
     endYear:'Last calendar year this childcare expense applies, including that year.',
     declinePerYear:'Dollar decrease in this annual childcare cost each year after the start year. Costs cannot fall below zero.'
   };
+  Object.assign(text,{
+    targetRetireAge:'Age when you stop working. Moving a slider fixes this age while the planner searches for your partner’s retirement age.',
+    desiredMonthlyIncome:'What your household wants to spend each month after tax, in today’s dollars.',
+    startAge:'Age pension payments begin.',type:'Choose the kind of account, property or loan.',
+    owner:'The person who owns this account or pension.',balance:'What this account is worth today.',
+    targetDeathAge:'Age to plan through. You can set separate lifespans under Estate and survivor settings.'
+  });
   let sequence=0;
   function attach(control, description) {
     if (!control || control.dataset.helpAttached) return;
-    control.dataset.helpAttached='true'; control.title=description;
-    const wrap=document.createElement('span');wrap.className='setting-help';
-    const button=document.createElement('button');button.type='button';button.className='help-button';button.textContent='?';
-    button.setAttribute('aria-label','Help: '+(control.getAttribute('aria-label') || control.labels?.[0]?.textContent || 'setting'));
-    button.setAttribute('aria-expanded','false');
-    const tip=document.createElement('span');tip.className='help-tip';tip.id='help-'+(++sequence);tip.textContent=description;tip.setAttribute('role','tooltip');
-    control.setAttribute('aria-describedby',tip.id);button.setAttribute('aria-controls',tip.id);
-    button.onclick=()=>{const open=wrap.classList.toggle('open');button.setAttribute('aria-expanded',String(open));};
-    wrap.onkeydown=event=>{if(event.key==='Escape'){wrap.classList.remove('open');button.setAttribute('aria-expanded','false');button.blur();control.focus();}};
-    wrap.append(button,tip);control.insertAdjacentElement('afterend',wrap);
+    control.dataset.helpAttached='true';
+    const hint=document.createElement('small');hint.className='inline-help';hint.id='help-'+(++sequence);
+    const simple=String(description).replace(/commencement/g,'start').replace(/non-registered/g,'taxable').replace(/marginal-tax floor/g,'chosen tax rate');
+    hint.textContent=simple.length>220?simple.split(/(?<=[.!?])\s+/).slice(0,2).join(' '):simple;control.setAttribute('aria-describedby',hint.id);
+    const parent=control.parentElement;parent.appendChild(hint);
   }
   root.SettingHelp={text,attach};
 })(window);
