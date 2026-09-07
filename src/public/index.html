@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lifecycle Drawdown Engine</title>
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="/engine.js?v=3"></script>
+<style>
+  :root{
+    --bg:#0b1329; --panel:#16223f; --panel2:#0f1a33; --line:rgba(255,255,255,.06);
+    --accent:#38bdf8; --green:#22c55e; --orange:#f97316; --danger:#ef4444;
+    --violet:#a78bfa; --amber:#eab308; --text:#f8fafc; --muted:#94a3b8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:2rem;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text)}
+  .header{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap}
+  h1{margin:0;font-size:1.6rem;letter-spacing:-.02em}
+  .btn{background:var(--accent);color:#0b1329;padding:.7rem 1.15rem;text-decoration:none;border-radius:8px;font-weight:700;border:none;cursor:pointer;font-size:.9rem}
+  .btn.ghost{background:transparent;color:var(--accent);border:1px solid rgba(56,189,248,.4)}
+  .btn:focus-visible,select:focus-visible,input:focus-visible,.tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .card{background:var(--panel);border-radius:14px;padding:1.35rem;margin-bottom:1.25rem;border:1px solid var(--line)}
+  .chart-container{position:relative;height:360px;width:100%}
+  .alert-banner{font-size:1.05rem;font-weight:700;padding:.9rem 1.25rem;border-radius:10px;margin-bottom:1rem;display:flex;gap:1rem;align-items:center;justify-content:space-between;flex-wrap:wrap}
+  .alert-banner.danger{background:rgba(239,68,68,.14);border:2px solid var(--danger);color:#fca5a5}
+  .alert-banner.success{background:rgba(34,197,94,.14);border:2px solid var(--green);color:#86efac}
+  .alert-banner.warn{background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.5);color:#fde047;font-size:.85rem;font-weight:600}
+  .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:1.25rem}
+  .metric-card{background:var(--panel);padding:1.1rem;border-radius:12px;border:1px solid var(--line);text-align:center}
+  .metric-card label{display:block;color:var(--muted);font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.45rem}
+  .metric-card .val{font-size:1.5rem;font-weight:800;line-height:1.1}
+  .metric-card input.val{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--accent);text-align:center;width:100%;padding:.1rem;font-family:inherit}
+  .metric-card input.val:hover,.metric-card input.val:focus{border-color:rgba(56,189,248,.45);background:var(--panel2)}
+  .metric-card .sub{font-size:.72rem;color:var(--muted);margin-top:.3rem}
+  .controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem}
+  .ctl label.title{font-weight:700;display:block;margin-bottom:.4rem}
+  input[type=range]{width:100%;cursor:pointer;accent-color:var(--accent);margin:.4rem 0}
+  .pick{display:flex;align-items:center;gap:.6rem;margin-top:.5rem;flex-wrap:wrap}
+  .pick label{font-size:.7rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  select,input[type=number],input[type=text]{background:var(--panel2);color:#fff;border:1px solid #334155;padding:.45rem .55rem;border-radius:6px;font-weight:600;font-size:.85rem}
+  .toggle{display:flex;align-items:center;gap:.5rem;font-size:.8rem;font-weight:700;color:var(--muted)}
+  .tabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1.25rem;border-bottom:1px solid var(--line);padding-bottom:.6rem}
+  .tab{background:transparent;border:1px solid transparent;color:var(--muted);padding:.5rem .9rem;border-radius:8px;cursor:pointer;font-weight:700;font-size:.85rem}
+  .tab[aria-selected=true]{background:rgba(56,189,248,.14);color:var(--accent);border-color:rgba(56,189,248,.35)}
+  .panel[hidden]{display:none}
+  table{width:100%;border-collapse:collapse;margin-top:.75rem;font-size:.82rem}
+  th,td{padding:.55rem .5rem;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--accent);font-weight:700;position:sticky;top:0;background:var(--panel);z-index:2}
+  th:first-child,td:first-child{text-align:left}
+  tr.clickable{cursor:pointer}
+  tr.clickable:hover{background:rgba(56,189,248,.09)}
+  tr.short td{color:#fca5a5}
+  tr.sale td{background:rgba(167,139,250,.12)}
+  .legend{display:flex;gap:1rem;flex-wrap:wrap;font-size:.75rem;color:var(--muted);margin-top:.6rem}
+  .swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:.35rem}
+  #detail-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:100;align-items:center;justify-content:center;padding:1rem}
+  .modal-content{background:var(--panel);padding:1.75rem;border-radius:12px;width:720px;max-width:100%;max-height:88vh;overflow-y:auto}
+  .modal-row{display:flex;justify-content:space-between;gap:1rem;margin-bottom:.4rem;border-bottom:1px solid var(--line);padding-bottom:.4rem;font-size:.85rem}
+  .modal-header{font-weight:700;color:var(--accent);border-bottom:2px solid var(--accent);margin-top:1.4rem;padding-bottom:.25rem;margin-bottom:.7rem;text-transform:uppercase;font-size:.8rem}
+  .timeline{list-style:none;padding:0;margin:0}
+  .timeline li{display:grid;grid-template-columns:74px 1fr;gap:1rem;padding:.6rem 0;border-bottom:1px solid var(--line);align-items:baseline}
+  .timeline .yr{font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
+  .timeline .ago{font-size:.72rem;color:var(--muted)}
+  .note{background:rgba(56,189,248,.09);border-left:3px solid var(--accent);padding:.8rem 1rem;font-size:.82rem;color:#cbd5e1;border-radius:0 8px 8px 0;margin-bottom:1rem}
+  .bar{height:8px;background:var(--panel2);border-radius:99px;overflow:hidden;margin-top:.6rem}
+  .bar>span{display:block;height:100%;background:var(--accent)}
+  .scenario-row{display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:.7rem .9rem;background:var(--panel2);border-radius:8px;margin-bottom:.5rem;flex-wrap:wrap}
+  .pill{font-size:.68rem;font-weight:700;padding:.15rem .45rem;border-radius:99px;background:rgba(148,163,184,.15);color:var(--muted)}
+  @media (max-width:640px){body{padding:1rem}.chart-container{height:280px}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media print{.tabs,.controls,.btn,.header a{display:none}.panel{display:block!important}.panel[hidden]{display:block!important}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Lifecycle Drawdown Engine</h1>
+  <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
+    <span class="toggle"><input type="checkbox" id="real-toggle" checked><label for="real-toggle" style="cursor:pointer">Today's dollars</label></span>
+    <button class="btn ghost" onclick="exportCsv()">Export ledger</button>
+    <button class="btn ghost" onclick="window.print()">Print</button>
+    <a href="/config" class="btn">Configure</a>
+  </div>
+</div>
+
+<div id="status-banner" class="alert-banner success"><span id="banner-text">Running simulation…</span></div>
+<div id="warnings"></div>
+
+<div class="metrics-grid">
+  <div class="metric-card"><label>After-tax spending goal</label><input type="number" class="val" id="m-goal" step="50" min="0" value="0" aria-label="After-tax spending goal per month"><div class="sub">per month, today&#39;s dollars</div></div>
+  <div class="metric-card"><label>Portfolio runs out</label><div class="val" id="m-depleted" style="color:var(--orange)">—</div><div class="sub" id="m-depleted-sub">&nbsp;</div></div>
+  <div class="metric-card"><label>Max sustainable spending</label><div class="val" id="m-max" style="color:var(--green)">$0</div><div class="sub" id="m-max-sub">&nbsp;</div></div>
+  <div class="metric-card"><label>Lifetime tax paid</label><div class="val" id="m-tax" style="color:var(--danger)">$0</div><div class="sub">income tax + OAS clawback</div></div>
+  <div class="metric-card"><label>Tax refunds reinvested</label><div class="val" id="m-refund" style="color:var(--violet)">$0</div><div class="sub">from RRSP deductions</div></div>
+  <div class="metric-card"><label>Net worth at plan end</label><div class="val" id="m-nw">$0</div><div class="sub" id="m-nw-sub">&nbsp;</div></div>
+</div>
+
+<div class="card">
+  <div class="controls">
+    <div class="ctl">
+      <label class="title" id="lbl-p1">Person 1 retirement age: <span id="p1-age-val" style="color:var(--accent);font-size:1.3rem">55</span></label>
+      <input type="range" id="p1-slider" min="40" max="75" value="55" aria-label="Person 1 retirement age">
+      <div class="pick"><label>CPP</label><select id="p1-cpp"></select><label>OAS</label><select id="p1-oas"></select></div>
+    </div>
+    <div class="ctl">
+      <label class="title" id="lbl-p2">Person 2 retirement age: <span id="p2-age-val" style="color:var(--accent);font-size:1.3rem">55</span></label>
+      <input type="range" id="p2-slider" min="40" max="75" value="55" aria-label="Person 2 retirement age">
+      <div class="pick"><label>CPP</label><select id="p2-cpp"></select><label>OAS</label><select id="p2-oas"></select><label>HOOPP</label><select id="p2-hoopp"></select></div>
+    </div>
+    <div class="ctl">
+      <label class="title">After-tax spending: <span id="spend-val" style="color:var(--accent);font-size:1.3rem">$0</span>/mo</label>
+      <input type="range" id="spend-slider" min="2000" max="25000" step="250" value="9000" aria-label="Desired monthly after-tax spending">
+      <div class="pick">
+        <label>Withdrawal order</label>
+        <select id="strategy">
+          <option value="tfsa-first">TFSA → Non-reg → RRSP</option>
+          <option value="rrsp-first">RRSP → Non-reg → TFSA</option>
+          <option value="taxable-first">Non-reg → RRSP → TFSA</option>
+          <option value="min-tax">Fill lowest bracket from RRSP</option>
+          <option value="oas-smart">Keep income under OAS clawback</option>
+        </select>
+      </div>
+      <div class="pick">
+        <label>Market</label>
+        <select id="return-mode">
+          <option value="deterministic">Expected returns</option>
+          <option value="conservative">Conservative</option>
+          <option value="bad-decade">Bad first decade</option>
+        </select>
+        <label>RRSP floor</label>
+        <select id="rrsp-floor">
+          <option value="0">Always RRSP</option>
+          <option value="30">30% marginal</option>
+          <option value="35">35% marginal</option>
+          <option value="40">40% marginal</option>
+          <option value="99">TFSA only</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tabs" role="tablist">
+  <button class="tab" role="tab" aria-selected="true" data-panel="p-projection">Projection</button>
+  <button class="tab" role="tab" aria-selected="false" data-panel="p-networth">Net worth</button>
+  <button class="tab" role="tab" aria-selected="false" data-panel="p-cashflow">Cash flow &amp; tax</button>
+  <button class="tab" role="tab" aria-selected="false" data-panel="p-contrib">Contributions</button>
+  <button class="tab" role="tab" aria-selected="false" data-panel="p-ledger">Yearly ledger</button>
+  <button class="tab" role="tab" aria-selected="false" data-panel="p-timeline">Timeline</button>
+  <button class="tab" role="tab" aria-selected="false" data-panel="p-risk">Risk</button>
+  <button class="tab" role="tab" aria-selected="false" data-panel="p-scenarios">Scenarios</button>
+</div>
+
+<section class="panel" id="p-projection">
+  <div class="card" style="position:relative">
+    <div style="position:absolute;top:1rem;right:1.4rem;z-index:5;font-size:.8rem;color:var(--muted);display:flex;align-items:center;gap:.5rem">
+      <input type="checkbox" id="toggle-lines" checked style="width:auto;margin:0">
+      <label for="toggle-lines" style="cursor:pointer;margin:0;font-weight:700">Debt payoff markers</label>
+    </div>
+    <div class="chart-container"><canvas id="chart-trajectory"></canvas></div>
+  </div>
+</section>
+
+<section class="panel" id="p-networth" hidden>
+  <div class="card">
+    <div class="chart-container"><canvas id="chart-networth"></canvas></div>
+    <div class="legend"><span><i class="swatch" style="background:#a78bfa"></i>Net worth (equity less all debt)</span><span><i class="swatch" style="background:#38bdf8"></i>Investments</span><span><i class="swatch" style="background:#22c55e"></i>Home equity</span><span><i class="swatch" style="background:#f97316"></i>Rental equity</span><span><i class="swatch" style="background:#ef4444"></i>Debt outstanding</span></div>
+  </div>
+</section>
+
+<section class="panel" id="p-cashflow" hidden>
+  <div class="card">
+    <div class="chart-container"><canvas id="chart-cashflow"></canvas></div>
+    <div class="legend"><span>Bars stack gross income sources. Dashed red is total tax including OAS recovery tax; white is the after-tax spending target.</span></div>
+  </div>
+</section>
+
+<section class="panel" id="p-contrib" hidden>
+  <div class="card" id="target-card" hidden></div>
+  <div class="card">
+    <div class="note">Where each year's contribution budget goes. The optimizer moves flexible contributions to whichever RRSP has the highest marginal rate, stops once that rate falls below the floor you set, then fills TFSAs. Refunds are credited to the following year's budget.</div>
+    <div class="chart-container"><canvas id="chart-contrib"></canvas></div>
+  </div>
+  <div class="card" style="overflow-x:auto;max-height:60vh">
+    <table>
+      <thead><tr>
+        <th>Year</th><th id="ch-p1-tax">P1 taxable</th><th id="ch-p1-mr">P1 marginal</th>
+        <th id="ch-p2-tax">P2 taxable</th><th id="ch-p2-mr">P2 marginal</th>
+        <th>RRSP target</th><th>RRSP in</th><th>TFSA in</th><th>Employer</th><th>HBP</th><th>Refund</th>
+        <th>Childcare claim</th><th>RRSP room left</th><th>TFSA room left</th>
+      </tr></thead>
+      <tbody id="contrib-body"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" id="p-ledger" hidden>
+  <div class="card" style="overflow-x:auto;max-height:70vh">
+    <div class="note">One calendar year per row. Click a row for the full ledger: income by source, tax by person, account movement and debt.</div>
+    <table>
+      <thead><tr>
+        <th>Year</th><th>Ages</th><th>Employment</th><th>CPP/OAS/Pension</th><th>Rental cash</th>
+        <th>RRIF minimum</th><th>Portfolio draw</th><th>Tax</th><th>After-tax cash</th><th>Spending goal</th><th>Portfolio</th><th>Net worth</th>
+      </tr></thead>
+      <tbody id="ledger-body"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" id="p-timeline" hidden>
+  <div class="card"><ul class="timeline" id="timeline-list"></ul></div>
+</section>
+
+<section class="panel" id="p-risk" hidden>
+  <div class="card">
+    <div class="note">Monte Carlo re-runs the whole plan with random annual returns around each account's expected rate. Success means the spending goal was funded every year to the planning age.</div>
+    <div class="pick" style="margin-bottom:1rem">
+      <label>Runs</label><select id="mc-runs"><option>250</option><option selected>500</option><option>1000</option></select>
+      <label>Volatility %</label><input type="number" id="mc-vol" value="12" style="width:80px">
+      <button class="btn" onclick="runMonteCarlo()">Run Monte Carlo</button>
+      <span id="mc-status" style="font-size:.8rem;color:var(--muted)"></span>
+    </div>
+    <div class="bar"><span id="mc-bar" style="width:0"></span></div>
+    <div class="metrics-grid" style="margin-top:1.25rem">
+      <div class="metric-card"><label>Success rate</label><div class="val" id="mc-success">—</div><div class="sub">of all runs</div></div>
+      <div class="metric-card"><label>Median end net worth</label><div class="val" id="mc-median">—</div><div class="sub">nominal</div></div>
+      <div class="metric-card"><label>Worst decile end</label><div class="val" id="mc-worst">—</div><div class="sub">10th percentile</div></div>
+    </div>
+    <div class="chart-container"><canvas id="chart-mc"></canvas></div>
+  </div>
+</section>
+
+<section class="panel" id="p-scenarios" hidden>
+  <div class="card">
+    <div class="note">A scenario is a full snapshot of the current configuration. Save one, change the plan, then compare or load it back.</div>
+    <div class="pick" style="margin-bottom:1rem">
+      <input type="text" id="scenario-name" placeholder="Scenario name" style="flex:1;min-width:200px">
+      <button class="btn" onclick="saveScenario()">Save current plan</button>
+      <button class="btn ghost" onclick="backupNow()">Back up config</button>
+    </div>
+    <div id="scenario-list"></div>
+    <div class="chart-container" style="margin-top:1.5rem"><canvas id="chart-scenarios"></canvas></div>
+  </div>
+</section>
+
+<div id="detail-modal" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal-content" id="detail-modal-content"></div>
+</div>
+
+<script>
+const socket = io();
+const E = window.RetireEngine;
+let config = null, sim = null, charts = {}, saveTimer = null, scenarioSims = {};
+
+const CAD = new Intl.NumberFormat('en-CA', {style:'currency', currency:'CAD', maximumFractionDigits:0});
+const fmt = v => CAD.format(isFinite(v) ? v : 0);
+const pct = v => (isFinite(v) ? (v*100).toFixed(1) : '0.0') + '%';
+const fmtM = v => (Math.abs(v) >= 1e6 ? '$' + (v/1e6).toFixed(1) + 'M' : '$' + Math.round(v/1000) + 'k');
+const el = id => document.getElementById(id);
+const real = () => el('real-toggle').checked;
+/* Deflate a nominal figure for a given year when the today's-dollars view is on. */
+function D(v, row) { return real() ? v * row.deflator : v; }
+
+/* ---------------------------------------------------------------- tabs */
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', x === t));
+  document.querySelectorAll('.panel').forEach(p => p.hidden = p.id !== t.dataset.panel);
+  Object.values(charts).forEach(c => c && c.resize());
+}));
+
+function fillSelect(sel, from, to) {
+  sel.innerHTML = '';
+  for (let a = from; a <= to; a++) { const o = document.createElement('option'); o.value = a; o.textContent = a; sel.appendChild(o); }
+}
+fillSelect(el('p1-cpp'), 60, 70); fillSelect(el('p2-cpp'), 60, 70);
+fillSelect(el('p1-oas'), 65, 70); fillSelect(el('p2-oas'), 65, 70);
+fillSelect(el('p2-hoopp'), 50, 70);
+
+['p1-cpp','p2-cpp','p1-oas','p2-oas','p2-hoopp','strategy','return-mode','rrsp-floor']
+  .forEach(id => el(id).addEventListener('change', onStateChange));
+el('toggle-lines').addEventListener('change', () => charts.traj && charts.traj.update());
+el('real-toggle').addEventListener('change', () => run());
+el('p1-slider').addEventListener('input', e => { el('p1-age-val').textContent = e.target.value; onStateChange(); });
+el('p2-slider').addEventListener('input', e => { el('p2-age-val').textContent = e.target.value; onStateChange(); });
+el('spend-slider').addEventListener('input', e => { el('m-goal').value = e.target.value; el('spend-val').textContent = fmt(e.target.value); onStateChange(); });
+el('m-goal').addEventListener('change', e => { const v = Math.max(0, +e.target.value || 0); e.target.value = v; el('spend-slider').value = v; el('spend-val').textContent = fmt(v); onStateChange(); });
+
+socket.on('config_updated', c => { config = c; syncControls(); run(); });
+
+function syncControls() {
+  const P = config.incomes;
+  el('lbl-p1').childNodes[0].nodeValue = P[0].name + ' retirement age: ';
+  el('lbl-p2').childNodes[0].nodeValue = P[1].name + ' retirement age: ';
+  el('p1-slider').value = P[0].targetRetireAge; el('p1-age-val').textContent = P[0].targetRetireAge;
+  el('p2-slider').value = P[1].targetRetireAge; el('p2-age-val').textContent = P[1].targetRetireAge;
+  el('p1-cpp').value = P[0].cppStartAge; el('p2-cpp').value = P[1].cppStartAge;
+  el('p1-oas').value = P[0].oasStartAge; el('p2-oas').value = P[1].oasStartAge;
+  el('p2-hoopp').value = P[1].hooppStartAge || 55;
+  el('strategy').value = config.assumptions.withdrawalStrategy;
+  el('return-mode').value = ['conservative','bad-decade'].includes(config.assumptions.returnMode) ? config.assumptions.returnMode : 'deterministic';
+  /* keep any custom floor set on the config page selectable here */
+  const floor = String(config.assumptions.rrspMinMarginalRate);
+  const floorSel = el('rrsp-floor');
+  if (![...floorSel.options].some(o => o.value === floor)) {
+    const o = document.createElement('option');
+    o.value = floor; o.textContent = floor + '% marginal';
+    floorSel.appendChild(o);
+  }
+  floorSel.value = floor;
+  el('spend-slider').value = config.assumptions.desiredMonthlyIncome;
+  el('m-goal').value = Math.round(config.assumptions.desiredMonthlyIncome);
+  el('spend-val').textContent = fmt(config.assumptions.desiredMonthlyIncome);
+  el('mc-vol').value = config.assumptions.mcVolatility;
+  el('mc-runs').value = String(config.assumptions.mcRuns);
+  ['ch-p1-tax','ch-p1-mr'].forEach((id,i) => el(id).textContent = P[0].name + (i ? ' marginal' : ' taxable'));
+  ['ch-p2-tax','ch-p2-mr'].forEach((id,i) => el(id).textContent = P[1].name + (i ? ' marginal' : ' taxable'));
+}
+
+function onStateChange() {
+  if (!config) return;
+  config.incomes[0].targetRetireAge = +el('p1-slider').value;
+  config.incomes[1].targetRetireAge = +el('p2-slider').value;
+  config.incomes[0].cppStartAge = +el('p1-cpp').value;
+  config.incomes[1].cppStartAge = +el('p2-cpp').value;
+  config.incomes[0].oasStartAge = +el('p1-oas').value;
+  config.incomes[1].oasStartAge = +el('p2-oas').value;
+  config.incomes[1].hooppStartAge = +el('p2-hoopp').value;
+  config.assumptions.withdrawalStrategy = el('strategy').value;
+  config.assumptions.returnMode = el('return-mode').value;
+  config.assumptions.rrspMinMarginalRate = +el('rrsp-floor').value;
+  config.assumptions.desiredMonthlyIncome = Math.max(0, +el('m-goal').value || 0);
+  run();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(config)});
+  }, 450);
+}
+
+/* ---------------------------------------------------------------- charts */
+Chart.register({
+  id: 'payoffLines',
+  afterDatasetsDraw(c) {
+    if (c.canvas.id !== 'chart-trajectory' || !el('toggle-lines').checked || !sim) return;
+    const ctx = c.ctx, x = c.scales.x, y = c.scales.y;
+    sim.schedules.filter(s => s.actualPayoff).forEach((s, i) => {
+      const idx = c.data.labels.indexOf(s.actualPayoff);
+      if (idx < 0) return;
+      const px = x.getPixelForValue(idx);
+      ctx.save();
+      ctx.beginPath(); ctx.moveTo(px, y.top); ctx.lineTo(px, y.bottom);
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(239,68,68,.75)'; ctx.setLineDash([4,4]); ctx.stroke();
+      ctx.fillStyle = '#ef4444'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'right';
+      ctx.fillText(s.name + ' paid off (' + s.actualPayoff + ')', px - 6, y.top + 18 + i*16);
+      ctx.restore();
+    });
+  }
+});
+
+const axisMoney = { grid:{color:'rgba(255,255,255,.05)'}, ticks:{color:'#94a3b8', callback:v=>fmtM(v)} };
+const axisX = { grid:{color:'rgba(255,255,255,.05)'}, ticks:{color:'#94a3b8', maxTicksLimit:14} };
+const baseOpts = () => ({
+  responsive:true, maintainAspectRatio:false, interaction:{mode:'index', intersect:false},
+  plugins:{ legend:{labels:{color:'#cbd5e1', boxWidth:12}},
+    tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.parsed.y)}} },
+  scales:{ x:axisX, y:axisMoney }
+});
+function upsert(key, canvasId, cfg) {
+  if (charts[key]) charts[key].destroy();
+  charts[key] = new Chart(document.getElementById(canvasId).getContext('2d'), cfg);
+}
+
+/* ------------------------------------------------------------------ run */
+function run() {
+  if (!config) return;
+  sim = E.simulate(config);
+  const years = sim.years;
+  const labels = years.map(r => r.year);
+  const P = config.incomes;
+  const unit = real() ? " in today's dollars" : ' nominal';
+
+  /* banner */
+  const banner = el('status-banner'), text = el('banner-text');
+  if (sim.depletedYear) {
+    const r = years.find(x => x.year === sim.depletedYear);
+    banner.className = 'alert-banner danger';
+    text.textContent = `Spending goal is not fully funded from ${sim.depletedYear} (${P[0].name} ${r.ages[0]}, ${P[1].name} ${r.ages[1]}).`;
+    el('m-depleted').textContent = sim.depletedYear;
+    el('m-depleted').style.color = 'var(--danger)';
+    el('m-depleted-sub').textContent = `ages ${r.ages[0]} / ${r.ages[1]}`;
+  } else {
+    banner.className = 'alert-banner success';
+    text.textContent = `Spending goal is funded every year through age ${config.assumptions.targetDeathAge}.`;
+    el('m-depleted').textContent = 'Never';
+    el('m-depleted').style.color = 'var(--green)';
+    el('m-depleted-sub').textContent = `plan runs to ${sim.endYear}`;
+  }
+
+  /* data-quality warnings */
+  const warn = [];
+  sim.schedules.forEach(s => {
+    if (s.negativeAmortization) warn.push(`${s.name}: the payment does not cover the interest at this rate — the balance is growing.`);
+    else if (s.mismatch) warn.push(`${s.name}: your configured payoff year is ${s.configuredPayoff}, but this rate and payment amortize to ${s.actualPayoff || 'never'}. The schedule is used, not the configured year.`);
+  });
+  el('warnings').innerHTML = warn.map(w => `<div class="alert-banner warn"><span>${w}</span></div>`).join('');
+
+  el('m-goal').value = Math.round(config.assumptions.desiredMonthlyIncome);
+  const last = years[years.length - 1];
+  el('m-tax').textContent = fmt(real() ? years.reduce((s,r)=>s+r.totalTax*r.deflator, 0) : sim.lifetimeTax);
+  el('m-refund').textContent = fmt(real() ? years.reduce((s,r)=>s+r.refund*r.deflator, 0) : sim.lifetimeRefunds);
+  el('m-nw').textContent = fmt(real() ? sim.finalNetWorthReal : sim.finalNetWorth);
+  el('m-nw-sub').textContent = real() ? "today's dollars" : sim.endYear + ' dollars';
+
+  const maxSpend = E.maxSustainableSpend(config);
+  el('m-max').textContent = fmt(maxSpend) + '/mo';
+  el('m-max-sub').textContent = `to age ${config.assumptions.targetDeathAge}, today's dollars`;
+
+  /* trajectory */
+  upsert('traj', 'chart-trajectory', {
+    type:'line',
+    data:{ labels, datasets:[
+      { label:'Investments'+unit, data: years.map(r=>D(r.portfolio,r)), borderColor:'#38bdf8', backgroundColor:'rgba(56,189,248,.35)', fill:true, tension:.1, pointRadius:0 },
+      { label:'Rental equity', data: years.map(r=>D(r.rentalEquity,r)), borderColor:'#f97316', backgroundColor:'rgba(249,115,22,.35)', fill:true, tension:.1, pointRadius:0 },
+      { label:'Home equity', data: years.map(r=>D(r.principalEquity,r)), borderColor:'#22c55e', backgroundColor:'rgba(34,197,94,.3)', fill:true, tension:.1, pointRadius:0 }
+    ]},
+    options: Object.assign(baseOpts(), { scales:{ x:axisX, y:Object.assign({stacked:true}, axisMoney) } })
+  });
+
+  /* net worth */
+  upsert('nw', 'chart-networth', {
+    type:'line',
+    data:{ labels, datasets:[
+      { label:'Net worth'+unit, data: years.map(r=>D(r.netWorth,r)), borderColor:'#a78bfa', backgroundColor:'rgba(167,139,250,.15)', fill:true, tension:.1, pointRadius:0, borderWidth:3 },
+      { label:'Investments', data: years.map(r=>D(r.portfolio,r)), borderColor:'#38bdf8', tension:.1, pointRadius:0 },
+      { label:'Home equity', data: years.map(r=>D(r.principalEquity,r)), borderColor:'#22c55e', tension:.1, pointRadius:0 },
+      { label:'Rental equity', data: years.map(r=>D(r.rentalEquity,r)), borderColor:'#f97316', tension:.1, pointRadius:0 },
+      { label:'Debt outstanding', data: years.map(r=>-D(r.debt,r)), borderColor:'#ef4444', tension:.1, pointRadius:0, borderDash:[5,4] }
+    ]},
+    options: baseOpts()
+  });
+
+  /* cash flow */
+  upsert('cf', 'chart-cashflow', {
+    type:'bar',
+    data:{ labels, datasets:[
+      { label:'Employment', data: years.map(r=>D(r.employment,r)), backgroundColor:'#64748b', stack:'i' },
+      { label:'CPP + OAS', data: years.map(r=>D(r.cpp+r.oas,r)), backgroundColor:'#22c55e', stack:'i' },
+      { label:'HOOPP', data: years.map(r=>D(r.pension - r.pension2,r)), backgroundColor:'#a78bfa', stack:'i' },
+      { label:'Other pensions', data: years.map(r=>D(r.pension2,r)), backgroundColor:'#c4b5fd', stack:'i' },
+      { label:'Rental cash flow', data: years.map(r=>D(r.rentCash,r)), backgroundColor:'#f97316', stack:'i' },
+      { label:'Sale proceeds', data: years.map(r=>D(r.saleProceeds,r)), backgroundColor:'#eab308', stack:'i' },
+      { label:'RRIF minimum', data: years.map(r=>D(r.rrifForced,r)), backgroundColor:'#0ea5e9', stack:'i' },
+      { label:'Portfolio draw', data: years.map(r=>D(r.discretionaryDraw,r)), backgroundColor:'#38bdf8', stack:'i' },
+      { label:'Total tax', type:'line', data: years.map(r=>D(r.totalTax,r)), borderColor:'#ef4444', borderDash:[5,4], pointRadius:0, tension:.1 },
+      { label:'Spending goal', type:'line', data: years.map(r=>D(r.spendTarget,r)), borderColor:'#f8fafc', pointRadius:0, tension:.1, borderWidth:2 }
+    ]},
+    options: Object.assign(baseOpts(), { scales:{ x:Object.assign({stacked:true}, axisX), y:Object.assign({stacked:true}, axisMoney) } })
+  });
+
+  /* contributions */
+  const working = years.filter(r => r.contributions > 0 || r.refund > 0);
+  upsert('contrib', 'chart-contrib', {
+    type:'bar',
+    data:{ labels: working.map(r=>r.year), datasets:[
+      { label:P[0].name+' RRSP', data: working.map(r=>D(sumContrib(r,'RRSP',P[0].name),r)), backgroundColor:'#38bdf8', stack:'c' },
+      { label:P[1].name+' RRSP', data: working.map(r=>D(sumContrib(r,'RRSP',P[1].name),r)), backgroundColor:'#0ea5e9', stack:'c' },
+      { label:P[0].name+' TFSA', data: working.map(r=>D(sumContrib(r,'TFSA',P[0].name),r)), backgroundColor:'#22c55e', stack:'c' },
+      { label:P[1].name+' TFSA', data: working.map(r=>D(sumContrib(r,'TFSA',P[1].name),r)), backgroundColor:'#4ade80', stack:'c' },
+      { label:'Non-registered', data: working.map(r=>D(sumContrib(r,'TAXABLE',null),r)), backgroundColor:'#f97316', stack:'c' },
+      { label:'Refund generated', type:'line', data: working.map(r=>D(r.refund,r)), borderColor:'#a78bfa', borderWidth:3, pointRadius:0, tension:.1 }
+    ]},
+    options: Object.assign(baseOpts(), { scales:{ x:Object.assign({stacked:true}, axisX), y:Object.assign({stacked:true}, axisMoney) } })
+  });
+
+  el('contrib-body').innerHTML = working.map(r => `<tr>
+    <td>${r.year}</td>
+    <td>${fmt(D(r.taxableIncome[0],r))}</td><td>${pct(r.marginalRates[0])}</td>
+    <td>${fmt(D(r.taxableIncome[1],r))}</td><td>${pct(r.marginalRates[1])}</td>
+    <td style="color:var(--violet);font-weight:700">${(r.rrspTarget[0]+r.rrspTarget[1]) > 0 ? fmt(D(r.rrspTarget[0]+r.rrspTarget[1],r)) : '—'}</td>
+    <td style="color:var(--accent)">${fmt(D(sumContrib(r,'RRSP',null),r))}</td>
+    <td style="color:var(--green)">${fmt(D(sumContrib(r,'TFSA',null),r))}</td>
+    <td>${fmt(D(r.employerContributions,r))}</td>
+    <td>${fmt(D(r.hbpRepayments,r))}</td>
+    <td style="color:var(--violet)">${fmt(D(r.refund,r))}</td>
+    <td>${r.childcareClaim > 0 ? fmt(D(r.childcareClaim,r)) + (r.childcareClaim < r.childcareSpend ? ' <span class="pill">capped</span>' : '') : '—'}</td>
+    <td>${fmt(D(r.rrspRoom[0],r))} / ${fmt(D(r.rrspRoom[1],r))}</td>
+    <td>${fmt(D(r.tfsaRoom[0],r))} / ${fmt(D(r.tfsaRoom[1],r))}</td>
+  </tr>`).join('');
+
+  renderTargetCard(years);
+  renderLedger(years);
+  renderTimeline();
+}
+
+/* This year's RRSP recommendation — the number you act on, not a setting. */
+function renderTargetCard(years) {
+  const now = new Date().getFullYear();
+  const r = years.find(x => x.year === now) || years[0];
+  const P = config.incomes;
+  const rows = [0,1]
+    .filter(k => r.rrspTarget[k] > 0 || r.rrspPace[k] > 0)
+    .map(k => {
+      const gap = r.rrspTarget[k] - r.rrspPace[k];
+      return `<div style="flex:1;min-width:260px">
+        <div style="font-weight:800;font-size:1.05rem;margin-bottom:.35rem">${P[k].name}</div>
+        <div style="font-size:2rem;font-weight:800;color:var(--violet);line-height:1.1">${fmt(r.rrspTarget[k])}</div>
+        <div style="color:var(--muted);font-size:.8rem;margin:.3rem 0 .6rem">target RRSP contribution for ${r.year}, on top of any payroll plan</div>
+        <div style="font-size:.85rem">Current pace: <strong>${fmt(r.rrspPace[k])}</strong> (${fmt(r.rrspPace[k]/12)}/mo)</div>
+        <div style="font-size:.85rem;margin-top:.2rem">${
+          gap > 1 ? `Top up <strong style="color:var(--accent)">${fmt(gap)}</strong> by 2 March ${r.year + 1}`
+          : gap < -1 ? `<span style="color:#fde047">Ahead by ${fmt(-gap)} — you can ease off</span>`
+          : `<span style="color:var(--green)">On target</span>` }</div>
+        <div style="font-size:.78rem;color:var(--muted);margin-top:.4rem">Lands at ${pct(r.marginalRates[k])} marginal &middot; ${fmt(r.rrspRoom[k])} room left after</div>
+      </div>`;
+    });
+  const card = el('target-card');
+  if (!rows.length) { card.hidden = true; return; }
+  card.hidden = false;
+  card.innerHTML = `<div style="color:var(--muted);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.9rem">This year's RRSP target</div>
+    <div style="display:flex;gap:2rem;flex-wrap:wrap">${rows.join('')}</div>
+    <div style="font-size:.78rem;color:var(--muted);margin-top:1rem;border-top:1px solid var(--line);padding-top:.7rem">
+      Every extra dollar of bonus raises the target by exactly one dollar, so a February top-up of "whatever I'm short, plus the bonus" lands on target. Projections assume you hit this each year.</div>`;
+}
+
+function sumContrib(row, type, owner) {
+  return row.accounts.filter(a => (a.type === type || (type === 'RRSP' && a.type === 'RRIF')) && (!owner || a.owner === owner))
+    .reduce((s, a) => s + a.contrib, 0);
+}
+
+/* --------------------------------------------------------------- ledger */
+function renderLedger(years) {
+  el('ledger-body').innerHTML = years.map(r => `
+    <tr class="clickable ${r.unfunded > 1 ? 'short' : ''} ${r.saleEvents.length ? 'sale' : ''}" onclick="showYear(${r.year})">
+      <td>${r.year}${r.saleEvents.length ? ' <span class="pill">sale</span>' : ''}</td>
+      <td>${r.ages[0]} / ${r.ages[1]}</td>
+      <td>${fmt(D(r.employment,r))}</td>
+      <td>${fmt(D(r.cpp + r.oas + r.pension,r))}</td>
+      <td>${fmt(D(r.rentCash,r))}</td>
+      <td>${fmt(D(r.rrifForced,r))}</td>
+      <td style="color:var(--orange)">${fmt(D(r.discretionaryDraw,r))}</td>
+      <td style="color:#fca5a5">${fmt(D(r.totalTax,r))}</td>
+      <td style="color:var(--green)">${fmt(D(r.netCash,r))}</td>
+      <td>${fmt(D(r.spendTarget,r))}</td>
+      <td style="color:var(--accent);font-weight:700">${fmt(D(r.portfolio,r))}</td>
+      <td>${fmt(D(r.netWorth,r))}</td>
+    </tr>`).join('');
+}
+
+function showYear(y) {
+  const r = sim.years.find(x => x.year === y); if (!r) return;
+  const P = config.incomes;
+  let h = `<h2 style="margin:0;color:var(--accent)">${y} &middot; ages ${r.ages[0]} / ${r.ages[1]}</h2>
+    <div style="color:var(--muted);font-size:.85rem;margin-top:.35rem">
+      After-tax cash ${fmt(r.netCash)} against a goal of ${fmt(r.spendTarget)}
+      ${r.unfunded > 1 ? `<span style="color:#fca5a5"> &mdash; short by ${fmt(r.unfunded)}</span>` : ''}
+      ${r.surplus > 1 ? `<span style="color:#86efac"> &mdash; ${fmt(r.surplus)} surplus reinvested</span>` : ''}
+      <div style="margin-top:.25rem">All figures below are ${y} dollars.</div>
+    </div>`;
+
+  if (r.saleEvents.length) {
+    h += `<div class="modal-header">Property sale</div>`;
+    r.saleEvents.forEach(s => {
+      h += `<div class="modal-row"><span style="font-weight:700">${s.name}</span><span>${fmt(s.grossPrice)}</span></div>`;
+      h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Selling costs</span><span>-${fmt(s.sellingCosts)}</span></div>`;
+      h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Mortgage discharged</span><span>-${fmt(s.mortgageDischarged)}</span></div>`;
+      h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--green)">Cash released</span><span style="color:var(--green)">${fmt(s.netCash)}</span></div>`;
+      if (s.exempt) h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Principal residence exemption — no tax on the gain</span><span></span></div>`;
+      else {
+        if (s.capitalLoss > 0) h += `<div class="modal-row"><span style="padding-left:1rem;color:#fca5a5">Capital loss ${fmt(s.capitalLoss)} — offsets capital gains only, not income</span><span></span></div>`;
+        else h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Capital gain ${fmt(s.capitalGain)}, half taxable</span><span style="color:#fca5a5">${fmt(s.taxableGain)}</span></div>`;
+        if (s.ccaRecapture > 0) h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">CCA recapture (fully taxable)</span><span style="color:#fca5a5">${fmt(s.ccaRecapture)}</span></div>`;
+      }
+    });
+  }
+
+  h += `<div class="modal-header">Income and tax by person</div>`;
+  r.person.forEach((p, i) => {
+    h += `<div class="modal-row"><span style="font-weight:700">${p.name}</span><span class="pill">marginal ${pct(r.marginalRates[i])}</span></div>`;
+    [['Employment',p.employment],['CPP',p.cpp],['OAS',p.oas],['HOOPP lifetime',p.pension - p.pension2],['Other pension',p.pension2],['HOOPP bridge',p.bridge],['RRIF minimum',p.rrif],['Rental income',p.rental],['Sale income',p.sale]]
+      .filter(x => Math.abs(x[1]) > 1)
+      .forEach(x => h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">${x[0]}</span><span style="color:var(--green)">${fmt(x[1])}</span></div>`);
+    if (p.childcare > 1) h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Childcare deduction</span><span style="color:var(--accent)">-${fmt(p.childcare)}</span></div>`;
+    if (p.deductible > 1) h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">RRSP deduction</span><span style="color:var(--accent)">-${fmt(p.deductible)}</span></div>`;
+    h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Income tax</span><span style="color:#fca5a5">-${fmt(p.tax)}</span></div>`;
+    if (p.clawback > 1) h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">OAS recovery tax</span><span style="color:#fca5a5">-${fmt(p.clawback)}</span></div>`;
+    h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Room remaining (RRSP / TFSA)</span><span>${fmt(p.rrspRoom)} / ${fmt(p.tfsaRoom)}</span></div>`;
+  });
+  if (Math.abs(r.pensionSplit) > 1)
+    h += `<div class="modal-row"><span>Pension income split to ${r.pensionSplit > 0 ? P[1].name : P[0].name}</span><span>${fmt(Math.abs(r.pensionSplit))}</span></div>`;
+  if (r.refund > 1)
+    h += `<div class="modal-row"><span>Refund generated, reinvested next year</span><span style="color:var(--violet)">${fmt(r.refund)}</span></div>`;
+  if (r.childcareClaim > 0 && r.childcareClaim < r.childcareSpend)
+    h += `<div class="modal-row"><span style="color:#fde047">Childcare spend ${fmt(r.childcareSpend)} exceeds the CRA cap of ${fmt(r.childcareCap)}</span><span style="color:#fde047">${fmt(r.childcareSpend - r.childcareClaim)} not deductible</span></div>`;
+
+  if (r.rentGross > 0) {
+    h += `<div class="modal-header">Rental property</div>`;
+    h += `<div class="modal-row"><span>Rent collected (after vacancy)</span><span>${fmt(r.rentGross)}</span></div>`;
+    h += `<div class="modal-row"><span>Operating costs</span><span>-${fmt(r.rentOpex)}</span></div>`;
+    h += `<div class="modal-row"><span>Debt payments</span><span>-${fmt(r.rentPayment)}</span></div>`;
+    h += `<div class="modal-row"><span>Cash flow</span><span style="color:${r.rentCash>=0?'var(--green)':'#fca5a5'}">${fmt(r.rentCash)}</span></div>`;
+    h += `<div class="modal-row"><span>Deductible interest</span><span>${fmt(r.rentInterest)}</span></div>`;
+    if (r.ccaClaim > 0) h += `<div class="modal-row"><span>CCA claimed (UCC left ${fmt(r.uccRemaining)})</span><span>-${fmt(r.ccaClaim)}</span></div>`;
+    h += `<div class="modal-row"><span>Taxable rental income</span><span>${fmt(r.rentTaxable)}</span></div>`;
+  }
+
+  h += `<div class="modal-header">Accounts</div>`;
+  r.accounts.forEach(a => {
+    const bits = [];
+    if (a.contrib > 1) bits.push(`<span style="color:var(--accent)">+${fmt(a.contrib)} in</span>`);
+    if (a.forced > 1) bits.push(`<span style="color:#0ea5e9">-${fmt(a.forced)} RRIF min</span>`);
+    if (a.draw > 1) bits.push(`<span style="color:var(--orange)">-${fmt(a.draw)} drawn</span>`);
+    bits.push(`<span style="color:${a.growth>=0?'var(--green)':'#fca5a5'}">${a.growth>=0?'+':''}${fmt(a.growth)} growth</span>`);
+    h += `<div style="margin-bottom:.9rem;padding-bottom:.9rem;border-bottom:1px solid var(--line)">
+      <div style="font-weight:700">${a.owner} &middot; ${a.name} <span class="pill">${a.type}</span></div>
+      <div style="display:flex;justify-content:space-between;gap:1rem;font-size:.82rem;color:var(--muted);margin-top:.3rem;flex-wrap:wrap">
+        <span>Start ${fmt(a.start)}</span><div style="display:flex;gap:.9rem;flex-wrap:wrap">${bits.join('')}</div>
+        <span style="color:#fff;font-weight:700">End ${fmt(a.end)}</span>
+      </div></div>`;
+  });
+
+  const liveDebt = r.debts.filter(d => d.balance > 1 || d.payment > 1);
+  if (liveDebt.length) {
+    h += `<div class="modal-header">Debt</div>`;
+    liveDebt.forEach(d => {
+      h += `<div class="modal-row"><span>${d.name}</span><span>${fmt(d.balance)} owing &middot; ${fmt(d.interest)} interest &middot; ${fmt(d.payment)} paid</span></div>`;
+    });
+  }
+
+  el('detail-modal-content').innerHTML = h;
+  el('detail-modal').style.display = 'flex';
+}
+
+/* ------------------------------------------------------------- timeline */
+function renderTimeline() {
+  const now = new Date().getFullYear();
+  el('timeline-list').innerHTML = E.buildTimeline(config, sim).map(e =>
+    `<li><span class="yr">${e.year}</span><span>${e.label}<div class="ago">${e.year - now <= 0 ? 'this year' : 'in ' + (e.year - now) + ' years'}</div></span></li>`
+  ).join('');
+}
+
+/* ------------------------------------------------------------------ CSV */
+function exportCsv() {
+  if (!sim) return;
+  const cols = ['year','age1','age2','employment','cpp','oas','hoopp','other_pension','rental_cash','rental_taxable','cca_claimed',
+    'rrif_minimum','portfolio_draw','rrsp_target','rrsp_contrib','tfsa_contrib','employer_contrib','hbp_repayment','refund',
+    'childcare_claim','marginal_1','marginal_2','income_tax','oas_clawback','after_tax_cash','spending_goal','shortfall',
+    'sale_proceeds','investments','home_equity','rental_equity','debt','net_worth','deflator'];
+  const rows = sim.years.map(r => [r.year,r.ages[0],r.ages[1],r.employment,r.cpp,r.oas,r.pension - r.pension2,r.pension2,r.rentCash,r.rentTaxable,r.ccaClaim,
+    r.rrifForced,r.discretionaryDraw,r.rrspTarget[0]+r.rrspTarget[1],sumContrib(r,'RRSP',null),sumContrib(r,'TFSA',null),r.employerContributions,r.hbpRepayments,r.refund,
+    r.childcareClaim,r.marginalRates[0],r.marginalRates[1],r.incomeTax,r.oasClawback,r.netCash,r.spendTarget,r.unfunded,
+    r.saleProceeds,r.portfolio,r.principalEquity,r.rentalEquity,r.debt,r.netWorth,r.deflator]
+    .map(v => typeof v === 'number' ? (Math.abs(v) < 2 && v !== 0 ? v.toFixed(4) : Math.round(v)) : v).join(','));
+  const blob = new Blob([cols.join(',') + '\n' + rows.join('\n')], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'retirement-ledger-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+/* ---------------------------------------------------------- monte carlo */
+function runMonteCarlo() {
+  const runs = +el('mc-runs').value;
+  config.assumptions.mcVolatility = +el('mc-vol').value;
+  config.assumptions.mcRuns = runs;
+  el('mc-status').textContent = 'Running…';
+  E.monteCarloRun(config, runs, 20260806,
+    p => { el('mc-bar').style.width = (p*100).toFixed(0) + '%'; },
+    res => {
+      el('mc-status').textContent = runs + ' runs complete';
+      el('mc-success').textContent = (res.successRate*100).toFixed(1) + '%';
+      el('mc-success').style.color = res.successRate >= .85 ? 'var(--green)' : res.successRate >= .7 ? 'var(--orange)' : 'var(--danger)';
+      const finals = res.results.map(r => r.finalNetWorth).sort((a,b)=>a-b);
+      el('mc-median').textContent = fmt(finals[Math.floor(finals.length/2)]);
+      el('mc-worst').textContent = fmt(finals[Math.floor(finals.length*0.1)]);
+      upsert('mc', 'chart-mc', {
+        type:'line',
+        data:{ labels: res.bands.map(b => b.year), datasets:[
+          { label:'90th percentile', data:res.bands.map(b=>b.p90), borderColor:'rgba(34,197,94,.6)', pointRadius:0, tension:.1 },
+          { label:'75th', data:res.bands.map(b=>b.p75), borderColor:'rgba(56,189,248,.5)', pointRadius:0, tension:.1 },
+          { label:'Median', data:res.bands.map(b=>b.p50), borderColor:'#38bdf8', borderWidth:3, pointRadius:0, tension:.1 },
+          { label:'25th', data:res.bands.map(b=>b.p25), borderColor:'rgba(249,115,22,.6)', pointRadius:0, tension:.1 },
+          { label:'10th percentile', data:res.bands.map(b=>b.p10), borderColor:'rgba(239,68,68,.7)', pointRadius:0, tension:.1 }
+        ]},
+        options: baseOpts()
+      });
+      fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(config)});
+    });
+}
+
+/* ------------------------------------------------------------ scenarios */
+async function loadScenarios() {
+  const list = await (await fetch('/api/scenarios')).json();
+  el('scenario-list').innerHTML = list.length ? '' : '<div style="color:var(--muted);font-size:.85rem">No saved scenarios yet.</div>';
+  list.forEach(s => {
+    const div = document.createElement('div');
+    div.className = 'scenario-row';
+    div.innerHTML = `<div><strong>${s.name}</strong><div style="font-size:.72rem;color:var(--muted)">saved ${new Date(s.savedAt).toLocaleString('en-CA')}</div></div>`;
+    const acts = document.createElement('div');
+    acts.style.display = 'flex'; acts.style.gap = '.5rem';
+    const cmp = document.createElement('button'); cmp.className='btn ghost'; cmp.textContent='Compare';
+    cmp.onclick = () => compareScenario(s);
+    const ld = document.createElement('button'); ld.className='btn ghost'; ld.textContent='Load';
+    ld.onclick = () => fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s.config)});
+    const del = document.createElement('button'); del.className='btn ghost'; del.textContent='Delete';
+    del.onclick = async () => { await fetch('/api/scenarios/' + encodeURIComponent(s.name), {method:'DELETE'}); loadScenarios(); };
+    acts.append(cmp, ld, del); div.appendChild(acts);
+    el('scenario-list').appendChild(div);
+  });
+}
+async function saveScenario() {
+  const name = el('scenario-name').value.trim();
+  if (!name) { el('scenario-name').focus(); return; }
+  await fetch('/api/scenarios', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, config})});
+  el('scenario-name').value = '';
+  loadScenarios();
+}
+function compareScenario(s) {
+  scenarioSims[s.name] = E.simulate(s.config);
+  const palette = ['#38bdf8','#f97316','#a78bfa','#22c55e','#ef4444','#eab308'];
+  const pick = r => real() ? r.netWorth * r.deflator : r.netWorth;
+  const datasets = [{ label:'Current plan', data: sim.years.map(r=>({x:r.year,y:pick(r)})), borderColor:'#f8fafc', borderWidth:3, pointRadius:0, tension:.1 }];
+  Object.keys(scenarioSims).forEach((k,i) => datasets.push({
+    label:k, data: scenarioSims[k].years.map(r=>({x:r.year,y:pick(r)})),
+    borderColor: palette[i % palette.length], pointRadius:0, tension:.1
+  }));
+  upsert('sc', 'chart-scenarios', {
+    type:'line', data:{datasets},
+    options: Object.assign(baseOpts(), { scales:{ x:Object.assign({type:'linear'}, axisX), y:axisMoney } })
+  });
+}
+async function backupNow() {
+  const r = await (await fetch('/api/backup', {method:'POST'})).json();
+  alert(r.ok ? 'Backed up to ' + r.file : 'Backup failed');
+}
+loadScenarios();
+</script>
+</body>
+</html>
