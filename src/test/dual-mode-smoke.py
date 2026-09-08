@@ -238,15 +238,36 @@ with tempfile.TemporaryDirectory(prefix='retirement-browser-data-') as data:
             page.goto(base+'/app-config.html');page.wait_for_selector('[data-dark-appearance]');page.locator('[data-dark-appearance]').check()
             page.goto(base+'/index.html');page.wait_for_function('document.documentElement.dataset.theme==="dark" && sim')
             page.screenshot(path=str(Path(tempfile.gettempdir())/'retirement-overview-dark.png'))
-            # A failed Socket.IO connection uses local storage without changing Docker data.
+            # A failed Socket.IO connection still saves authoritatively through HTTP.
             fallback=browser.new_context();fallback.route('**/vendor/socket.io.min.js',lambda route:route.fulfill(content_type='text/javascript',body="window.io=()=>({once(event,cb){if(event==='connect_error')queueMicrotask(cb);return this;},on(){},close(){}});"))
             fallback_page=fallback.new_page();fallback_page.goto(base+'/index.html');fallback_page.wait_for_function('config && sim')
-            assert fallback_page.evaluate('AppStorage.mode')=='local'
+            assert fallback_page.evaluate('AppStorage.mode')=='server'
             fallback_page.locator('#m-goal').fill('5400');fallback_page.locator('#m-goal').press('Tab');fallback_page.wait_for_timeout(900)
             fallback_page.goto(base+'/household.html');fallback_page.wait_for_selector('#editor input')
             assert fallback_page.evaluate('config.assumptions.desiredMonthlyIncome')==5400
+            assert json.load(urllib.request.urlopen(base+'/api/config'))['assumptions']['desiredMonthlyIncome']==5400
+            fallback_page.evaluate('async()=>{const c=structuredClone(PlanState.get());c.assumptions.desiredMonthlyIncome=5200;await AppStorage.save(c);}')
+            # An unavailable API never confirms a save or writes it into a local plan.
+            baseline=fallback_page.evaluate('PlanState.get()')
+            fallback.route('**/api/**',lambda route:route.abort())
+            failed=fallback_page.evaluate('''async()=>{const c=structuredClone(PlanState.get());c.assumptions.desiredMonthlyIncome=9999;try{await AppStorage.save(c);return false;}catch(error){return error.message;}}''')
+            assert failed and 'not confirmed' in failed
+            assert fallback_page.evaluate('AppStorage.mode')=='server'
+            assert fallback_page.evaluate('()=>BrowserPlanStore.readCache()')==baseline
             assert json.load(urllib.request.urlopen(base+'/api/config'))['assumptions']['desiredMonthlyIncome']==5200
+            fallback_page.goto(base+'/index.html');fallback_page.wait_for_function('config && sim')
+            assert fallback_page.evaluate('config.assumptions.desiredMonthlyIncome')==5200
+            assert 'Server offline' in fallback_page.locator('.storage-mode').inner_text()
             fallback.close()
+            unavailable=browser.new_context()
+            unavailable.route('**/api/**',lambda route:route.abort())
+            unavailable.route('**/vendor/socket.io.min.js',lambda route:route.abort())
+            unavailable_page=unavailable.new_page();unavailable_page.goto(base+'/household.html')
+            unavailable_page.wait_for_function('document.getElementById("settings-save-status").textContent.includes("Server unavailable")')
+            assert unavailable_page.locator('#save-settings').is_disabled()
+            assert 'Server unavailable' in unavailable_page.locator('#settings-save-status').inner_text()
+            assert unavailable_page.evaluate('PlanState.get()') is None
+            unavailable.close()
             # No connection: file resources, calculations, shared storage across dedicated files.
             offline=browser.new_context(viewport={'width':1440,'height':1000},offline=True)
             local=offline.new_page();local.on('pageerror',lambda e:errors.append(str(e)))

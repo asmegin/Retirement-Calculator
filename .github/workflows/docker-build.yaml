@@ -30,6 +30,7 @@ jobs:
         run: |
           node scripts/build-client.js
           cd src
+          npm ci --ignore-scripts
           npm test
 
       - name: Validate Compose installation

@@ -1,7 +1,7 @@
 
 const E = window.RetireEngine;
 const page=document.body.dataset.page||'household';
-let config = {};
+let config = null;
 let settingsDirty=false;
 function markSettingsDirty(){if(page==='app-config')return;settingsDirty=true;el('settings-save-status').textContent='Unsaved changes';}
 
@@ -156,6 +156,7 @@ function toast(msg, isErr) {
 let wizardDraft = null, wizardStep = 0;
 const wizardSteps = ['Household','Province','Ages','Income and business','Existing balances','Real estate and review'];
 function openWizard() {
+  if(!config){toast('Load or import a saved plan before opening setup.',true);return;}
   wizardDraft = structuredClone(config); wizardStep = 0;
   if (config.onboardingComplete === false) {
     wizardDraft.accounts = []; wizardDraft.realEstate = []; wizardDraft.dbPensions = [];
@@ -245,7 +246,9 @@ async function wizardMove(direction) {
 }
 
 async function init() {
-  config = E.normalizeConfig(await (await AppStorage.fetch('/api/config')).json());
+  const response=await AppStorage.fetch('/api/config'),body=await response.json();
+  if(!response.ok)throw new Error(body.error||'Could not load your saved plan.');
+  config = E.normalizeConfig(body);
   config.assumptions.spendingMode='target';
   render();
   if (config.onboardingComplete === false || new URLSearchParams(location.search).has('wizard')) openWizard();
@@ -255,6 +258,7 @@ function advanced(content,label='Advanced Options') {
   const d=document.createElement('details');d.className='advanced-options';const title=document.createElement('summary');title.textContent=label;d.append(title,content);return d;
 }
 function render() {
+  el('save-settings').disabled=false;
   const editor=el('editor');editor.replaceChildren();
   const titles={household:'Household',accounts:'Accounts','plan-settings':'Plan settings',employment:'Employment',properties:'Properties',pensions:'Pensions','app-config':'App Config'};
   el('page-title').textContent=titles[page]||'Household';document.title=el('page-title').textContent+' - Retirement';
@@ -494,7 +498,7 @@ async function loadBackups() {
   box.innerHTML = list.length ? '' : '<div style="color:var(--muted);font-size:.85rem">No backups yet.</div>';
   list.forEach(b => {
     const row = document.createElement('div'); row.className = 'backup-row';
-    row.innerHTML = `<span>${b.file}</span><span style="color:var(--muted)">${(b.size/1024).toFixed(1)} kB</span>`;
+    const filename=document.createElement('span'),size=document.createElement('span');filename.textContent=b.file;size.textContent=(b.size/1024).toFixed(1)+' kB';size.style.color='var(--muted)';row.append(filename,size);
     const btn = document.createElement('button'); btn.className = 'btn ghost'; btn.textContent = 'Restore';
     btn.onclick = async () => {
       if (!confirm('Replace the live configuration with ' + b.file + '?')) return;
@@ -555,4 +559,5 @@ AppStorage.subscribe(c=>{if(settingsDirty){el('settings-save-status').textConten
 el('editor').addEventListener('input',event=>{if(!event.target.closest('.comparison-tool'))markSettingsDirty();});
 el('editor').addEventListener('change',event=>{if(!event.target.closest('.comparison-tool'))markSettingsDirty();});
 el('editor').addEventListener('click',event=>{if(event.target.closest('button')&&/^(Add|Remove|Use these earnings)/.test(event.target.textContent))markSettingsDirty();});
-init().catch(error=>toast(error.message,true));
+el('save-settings').disabled=true;
+init().catch(error=>{el('settings-save-status').textContent=error.message;el('save-settings').disabled=true;toast(error.message,true);});

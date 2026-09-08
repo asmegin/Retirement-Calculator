@@ -15,10 +15,10 @@ with ZipFile(output,'w',ZIP_DEFLATED) as bundle:
     for document in sorted((root/'docs').rglob('*.md')):
         bundle.write(document,document.relative_to(root).as_posix())
     bundle.write(public/'vendor'/'LICENSES.txt','src/public/vendor/LICENSES.txt')
-    for name in ['compose.yaml','.env.example','.github/workflows/docker-build.yaml']:
+    for name in ['compose.yaml','.env.example','.github/workflows/docker-build.yaml','.github/workflows/pages.yaml']:
         bundle.write(root/name,name)
     bundle.writestr('VERSION.txt',version+'\n')
-    bundle.writestr('START-HERE.txt','Retirement Calculator '+version+'\n\nExtract the entire ZIP, then open index.html in Edge or Chrome.\nNo Node, Docker or internet connection is needed.\nFor setup: Configuration > Household > Setup Wizard. Replace all example values with your own information.\nUse Export JSON to keep a portable copy of your plan. Browser data belongs to this browser and folder.\nKeep all extracted files together.\nRead README.md for the full installation and user guide, or visit https://github.com/asmegin/Retirement-Calculator#readme\n')
+    bundle.writestr('START-HERE.txt','Retirement Calculator '+version+'\n\nExtract the entire ZIP, then open index.html in Edge or Chrome.\nNo Node, Docker or internet connection is needed.\nFor setup: Configuration > Household > Setup Wizard. Enter your household, income, assets and pension estimates; review all planning assumptions.\nUse Export JSON to keep a portable copy of your plan. Browser data belongs to this browser and folder.\nKeep all extracted files together.\nRead README.md for the full installation and user guide, or visit https://github.com/asmegin/Retirement-Calculator#readme\n')
 checksum=output.parent/'SHA256SUMS.txt'
 checksum.write_text(hashlib.sha256(output.read_bytes()).hexdigest()+'  '+output.name+'\n',encoding='utf-8')
 print(output)

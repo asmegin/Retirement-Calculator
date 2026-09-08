@@ -1,3 +1,4 @@
+const escapeHTML=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 
 const E = window.RetireEngine;
@@ -51,6 +52,7 @@ function receiveConfig(c) {
   if(config&&JSON.stringify(incoming)===JSON.stringify(config))return;
   clearTimeout(inputTimer);inputTimer=null;window.dispatchEvent(new Event('planinputschange'));
   config=incoming;syncControls();run();
+  if(config.onboardingComplete!==false&&el('setup-host').open)el('setup-host').close();
   if(config.onboardingComplete===false&&!wizardOffered){wizardOffered=true;openSetupWizard();}
 }
 AppStorage.subscribe(c=>{if(inputTimer===null&&saveTimer===null)receiveConfig(c);});
@@ -214,7 +216,7 @@ function run() {
     if (s.negativeAmortization) warn.push(`${s.name}: the payment does not cover the interest at this rate — the balance is growing.`);
     else if (s.mismatch) warn.push(`${s.name}: your configured payoff year is ${s.configuredPayoff}, but this rate and payment amortize to ${s.actualPayoff || 'never'}. The schedule is used, not the configured year.`);
   });
-  el('warnings').innerHTML = warn.map(w => `<div class="alert-banner warn"><span>${w}</span></div>`).join('');
+  el('warnings').innerHTML = warn.map(w => `<div class="alert-banner warn"><span>${escapeHTML(w)}</span></div>`).join('');
 
   el('m-goal').value = Math.round(config.assumptions.desiredMonthlyIncome);
   const last = years[years.length - 1];
@@ -320,7 +322,7 @@ function renderTargetCard(years) {
     .map(k => {
       const gap = r.rrspTarget[k] - r.rrspPace[k];
       return `<div style="flex:1;min-width:260px">
-        <div style="font-weight:800;font-size:1.05rem;margin-bottom:.35rem">${P[k].name}</div>
+        <div style="font-weight:800;font-size:1.05rem;margin-bottom:.35rem">${escapeHTML(P[k].name)}</div>
         <div style="font-size:2rem;font-weight:800;color:var(--violet);line-height:1.1">${fmt(r.rrspTarget[k])}</div>
         <div style="color:var(--muted);font-size:.8rem;margin:.3rem 0 .6rem">full calculated RRSP goal for ${r.year}, beyond payroll deposits</div>
         <div style="font-size:.85rem">Projection assumes ${config.assumptions.rrspGoalCompletion}%: <strong>${fmt(r.rrspTarget[k]*config.assumptions.rrspGoalCompletion/100)}</strong> contributed.</div><div style="font-size:.85rem">Configured pace: <strong>${fmt(r.rrspPace[k])}</strong> (${fmt(r.rrspPace[k]/12)}/mo)</div>
@@ -378,7 +380,7 @@ function showYear(y) {
   if (r.saleEvents.length) {
     h += `<div class="modal-header">Property sale</div>`;
     r.saleEvents.forEach(s => {
-      h += `<div class="modal-row"><span style="font-weight:700">${s.name}</span><span>${fmt(s.grossPrice)}</span></div>`;
+      h += `<div class="modal-row"><span style="font-weight:700">${escapeHTML(s.name)}</span><span>${fmt(s.grossPrice)}</span></div>`;
       h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Selling costs</span><span>-${fmt(s.sellingCosts)}</span></div>`;
       h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Mortgage discharged</span><span>-${fmt(s.mortgageDischarged)}</span></div>`;
       h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--green)">Cash released</span><span style="color:var(--green)">${fmt(s.netCash)}</span></div>`;
@@ -394,7 +396,7 @@ function showYear(y) {
 
   h += `<div class="modal-header">Income and tax by person</div>`;
   r.person.forEach((p, i) => {
-    h += `<div class="modal-row"><span style="font-weight:700">${p.name}</span><span class="pill">marginal ${pct(r.marginalRates[i])}</span></div>`;
+    h += `<div class="modal-row"><span style="font-weight:700">${escapeHTML(p.name)}</span><span class="pill">marginal ${pct(r.marginalRates[i])}</span></div>`;
     [['Employment',p.employment],['Eligible dividends',p.eligibleDividends],['Non-eligible dividends',p.nonEligibleDividends],['GIS',p.gis],['CPP/QPP contributions',-p.payrollCPP],['CPP',p.cpp],['OAS',p.oas],['DB lifetime',p.pension - p.pension2],['Other pension',p.pension2],['DB bridge',p.bridge],['RRIF minimum',p.rrif],['Rental income',p.rental],['Sale income',p.sale],['Unpaid HBP (taxable, no cash)',p.hbpShortfall]]
       .filter(x => Math.abs(x[1]) > 1)
       .forEach(x => h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">${x[0]}</span><span style="color:var(--green)">${fmt(x[1])}</span></div>`);
@@ -407,7 +409,7 @@ function showYear(y) {
     h += `<div class="modal-row"><span style="padding-left:1rem;color:var(--muted)">Room remaining (RRSP / TFSA)</span><span>${fmt(p.rrspRoom)} / ${fmt(p.tfsaRoom)}</span></div>`;
   });
   if (Math.abs(r.pensionSplit) > 1)
-    h += `<div class="modal-row"><span>Pension income split to ${r.pensionSplit > 0 ? P[1].name : P[0].name}</span><span>${fmt(Math.abs(r.pensionSplit))}</span></div>`;
+    h += `<div class="modal-row"><span>Pension income split to ${escapeHTML(r.pensionSplit > 0 ? P[1].name : P[0].name)}</span><span>${fmt(Math.abs(r.pensionSplit))}</span></div>`;
   if(config.assumptions.province==='QC') h += `<div class="modal-row"><span>Quebec pension income split</span><span>${fmt(Math.abs(r.provincialPensionSplit))}</span></div>`;
   if (r.refund > 1)
     h += `<div class="modal-row"><span>Refund generated, reinvested next year</span><span style="color:var(--violet)">${fmt(r.refund)}</span></div>`;
@@ -417,7 +419,7 @@ function showYear(y) {
   if(r.fhsaQualifyingWithdrawal>0) h+=`<div class="modal-row"><span>FHSA qualifying withdrawal (tax free)</span><span>${fmt(r.fhsaQualifyingWithdrawal)}</span></div>`;
   if (r.rentals.length) {
     h+='<div class="modal-header">Each rental property</div>';
-    r.rentals.forEach(p=>{ h+=`<div class="modal-row"><span>${p.name}: cash ${fmt(p.cash)} &middot; taxable ${fmt(p.taxable)}</span><span>CCA ${fmt(p.cca)} &middot; UCC ${fmt(p.ucc)}</span></div>`; });
+    r.rentals.forEach(p=>{ h+=`<div class="modal-row"><span>${escapeHTML(p.name)}: cash ${fmt(p.cash)} &middot; taxable ${fmt(p.taxable)}</span><span>CCA ${fmt(p.cca)} &middot; UCC ${fmt(p.ucc)}</span></div>`; });
   }
   if (r.rentGross > 0) {
     h += `<div class="modal-header">Rental property</div>`;
@@ -440,7 +442,7 @@ function showYear(y) {
     if (a.draw > 1) bits.push(`<span style="color:var(--orange)">-${fmt(a.draw)} drawn</span>`);
     bits.push(`<span style="color:${a.growth>=0?'var(--green)':'#fca5a5'}">${a.growth>=0?'+':''}${fmt(a.growth)} growth</span>`);
     h += `<div style="margin-bottom:.9rem;padding-bottom:.9rem;border-bottom:1px solid var(--line)">
-      <div style="font-weight:700">${a.owner} &middot; ${a.name} <span class="pill">${a.type}</span></div>
+      <div style="font-weight:700">${escapeHTML(a.owner)} &middot; ${escapeHTML(a.name)} <span class="pill">${escapeHTML(a.type)}</span></div>
       <div style="display:flex;justify-content:space-between;gap:1rem;font-size:.82rem;color:var(--muted);margin-top:.3rem;flex-wrap:wrap">
         <span>Start ${fmt(a.start)}</span><div style="display:flex;gap:.9rem;flex-wrap:wrap">${bits.join('')}</div>
         <span style="color:#fff;font-weight:700">End ${fmt(a.end)}</span>
@@ -451,7 +453,7 @@ function showYear(y) {
   if (liveDebt.length) {
     h += `<div class="modal-header">Debt</div>`;
     liveDebt.forEach(d => {
-      h += `<div class="modal-row"><span>${d.name}</span><span>${fmt(d.balance)} owing &middot; ${fmt(d.interest)} interest &middot; ${fmt(d.payment)} paid</span></div>`;
+      h += `<div class="modal-row"><span>${escapeHTML(d.name)}</span><span>${fmt(d.balance)} owing &middot; ${fmt(d.interest)} interest &middot; ${fmt(d.payment)} paid</span></div>`;
     });
   }
 
@@ -463,7 +465,7 @@ function showYear(y) {
 function renderTimeline() {
   const now = new Date().getFullYear();
   el('timeline-list').innerHTML = E.buildTimeline(config, sim).map(e =>
-    `<li><span class="yr">${e.year}</span><span>${e.label}<div class="ago">${e.year - now <= 0 ? 'this year' : 'in ' + (e.year - now) + ' years'}</div></span></li>`
+    `<li><span class="yr">${e.year}</span><span>${escapeHTML(e.label)}<div class="ago">${e.year - now <= 0 ? 'this year' : 'in ' + (e.year - now) + ' years'}</div></span></li>`
   ).join('');
 }
 

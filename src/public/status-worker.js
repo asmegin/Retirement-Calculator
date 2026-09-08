@@ -1,3 +1,3 @@
 'use strict';
-importScripts('./planning-core.js','./engine.js','./status-check.js');
-self.onmessage=event=>RetirementStatusCheck(event.data);
+importScripts('./planning-core.js','./engine.js','./status-check.js','./worker-tasks.js');
+self.onmessage=event=>runRetirementTask('status',event.data);

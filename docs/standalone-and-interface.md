@@ -2,7 +2,7 @@
 
 ## Docker on Unraid
 
-The container continues to serve the app on port 3333, with configuration and backups in the mounted data directory. Successful API and Socket.IO connections select server storage and synchronize open pages. The image now uses Node 22, matching the test runtime.
+The container continues to serve the app on port 3333, with configuration and backups in the mounted data directory. The server supplies an explicit runtime mode. HTTP persists saves; Socket.IO synchronizes open pages, with HTTP polling when the live connection is unavailable. The image now uses Node 22, matching the test runtime.
 
 App Config shows the connection mode, HTTP Auth status, appearance, and backups. HTTP Auth credentials remain server environment variables: `BASIC_AUTH_ENABLED=true`, `BASIC_AUTH_USER`, and `BASIC_AUTH_PASS`. Change them in the Unraid container editor and restart the container. They are never included in exported plan JSON.
 
@@ -12,7 +12,7 @@ Extract **all** files from `retirement-calculator-standalone.zip` and open `inde
 
 File pages share a small `storage.html` frame. This gives each dedicated page access to the same browser-local storage even in browsers that isolate storage by file path. The bridge accepts messages only from its parent, with keys restricted to this application; pages accept replies only from their own bridge. Browser privacy settings must allow local storage. Export JSON provides a portable backup when changing browsers, folders, or devices.
 
-An unavailable API or failed Socket.IO connection selects local storage and displays **Saved on this device**. Local changes stay local; they are not silently uploaded when the server returns. The cached Docker configuration is stored separately from local edits. To transfer a local plan into Docker, export it while in local mode, reconnect to Docker, then import it. Both modes support scenarios and a maximum of 30 local/server backups respectively. Import validates the plan and runs the engine before replacing saved state.
+Deployment mode is explicit. Static sites use transactional IndexedDB and file pages use the shared local-storage frame. An unavailable server reports unconfirmed saves and can show a cached plan, but never switches writes to local storage. Use Export/Import JSON to move plans deliberately. Both adapters support scenarios, validated import and up to 30 configuration backups. See the [hybrid deployment guide](hybrid-deployment.md) for GitHub Pages, Unraid permissions and migration.
 
 ## Pages and disclosure
 
@@ -51,7 +51,7 @@ These are annual projections under the entered assumptions. The bounded withdraw
 
 Run `node scripts/build-client.js` from the repository root (or `npm run build` in `src`). Edit the templates `index.html`, `config.html`, and `planning.html`, plus their shared scripts; this command regenerates dedicated pages and `worker-bundle.js`. Docker runs the same build during image construction.
 
-Run `npm test` in `src` for engine regressions. `python src/test/dual-mode-smoke.py` runs real-server and offline-file browser checks with isolated temporary data. It requires Python Playwright, Edge, Node, and the project's server dependencies. `NODE_EXE`, `NODE_PATH`, and `BROWSER_CHANNEL` can be set for nonstandard installations.
+Run `npm ci --ignore-scripts` then `npm test` in `src` for engine, storage and server regressions. `node scripts/build-static.js` builds the Pages artifact; `python src/test/static-smoke.py` checks it at root and project paths with no backend requests. `python src/test/dual-mode-smoke.py` runs real-server and offline-file browser checks with isolated temporary data. It requires Python Playwright, Edge, Node, and the project's server dependencies. `NODE_EXE`, `NODE_PATH`, and `BROWSER_CHANNEL` can be set for nonstandard installations.
 
 `python scripts/package-standalone.py` writes `dist/retirement-calculator-standalone.zip`, including only public client assets. On pushes to main (and the existing master branch trigger), GitHub Actions builds and tests the client, uploads that ZIP using `actions/upload-artifact@v4`, and builds/pushes the GHCR image. The downloaded Actions artifact contains the standalone ZIP. See the [artifact action documentation](https://github.com/actions/upload-artifact) and [Chart.js script-tag integration](https://www.chartjs.org/docs/latest/getting-started/integration.html).
 

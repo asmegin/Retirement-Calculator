@@ -1,0 +1,97 @@
+name: Hybrid checks and GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy the static calculator to GitHub Pages
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+      - name: Install and test
+        working-directory: src
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm run build:static
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install browser test tools
+        run: |
+          python -m pip install -r src/test/requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Test static, server and offline browser workflows
+        env:
+          BROWSER_CHANNEL: chromium
+        run: |
+          python src/test/static-smoke.py
+          python src/test/dual-mode-smoke.py
+      - name: Upload static website
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/pages
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate and build container
+        run: |
+          docker compose config --quiet
+          docker build -t retirement-ci ./src
+      - name: Verify non-root container, health, authentication and persistent data
+        run: |
+          docker volume create retirement-ci-data
+          trap 'docker rm -f retirement-ci; docker volume rm retirement-ci-data' EXIT
+          docker run -d --name retirement-ci --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp -p 127.0.0.1:3333:3333 -v retirement-ci-data:/app/data -e BASIC_AUTH_ENABLED=true -e BASIC_AUTH_USER=test -e BASIC_AUTH_PASS=ci-test retirement-ci
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3333/healthz; then break; fi
+            sleep 1
+          done
+          curl --fail http://127.0.0.1:3333/healthz
+          test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:3333/api/config)" = 401
+          curl --fail -u test:ci-test http://127.0.0.1:3333/runtime-config.js | grep '"mode":"server"'
+          docker exec retirement-ci node -e 'if(process.getuid()===0)throw new Error("Container is root");const fs=require("fs");const c=JSON.parse(fs.readFileSync("/app/data/config.json"));c.assumptions.desiredMonthlyIncome=4321;fs.writeFileSync("/app/data/config.json",JSON.stringify(c));'
+          docker restart retirement-ci
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3333/healthz; then break; fi
+            sleep 1
+          done
+          curl --fail --silent -u test:ci-test http://127.0.0.1:3333/api/config | python -c 'import json,sys; assert json.load(sys.stdin)["assumptions"]["desiredMonthlyIncome"] == 4321'
+
+  deploy:
+    if: (github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'push' && vars.ENABLE_GITHUB_PAGES == 'true')
+    needs: [verify, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -7,8 +7,8 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const fs = require('fs');
-const fsp = fs.promises;
+const ServerStore = require('./server-store');
+const version = require('./package.json').version;
 const path = require('path');
 const crypto = require('crypto');
 const Engine = require('./public/engine.js');
@@ -16,14 +16,16 @@ const Engine = require('./public/engine.js');
 const PORT = parseInt(process.env.PORT, 10) || 3333;
 const BIND = process.env.BIND || '0.0.0.0';
 const DATA_DIR = process.env.DATA_DIR || '/app/data';
-const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
-const BACKUP_DIR = path.join(DATA_DIR, 'backups');
-const SCENARIOS_FILE = path.join(DATA_DIR, 'scenarios.json');
-const KEEP_BACKUPS = 30;
+const store=new ServerStore(DATA_DIR);
+let ready=false;
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+function sameOrigin(req){try{return !req.headers.origin||new URL(req.headers.origin).host===req.headers.host;}catch(_){return false;}}
+const io = new Server(server,{allowRequest:(req,callback)=>callback(null,sameOrigin(req))});
+app.disable('x-powered-by');
+app.use((req,res,next)=>{res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','X-Frame-Options':'SAMEORIGIN'});next();});
+app.get('/healthz',(req,res)=>res.status(ready?200:503).json({ok:ready}));
 
 const authEnabled = process.env.BASIC_AUTH_ENABLED === 'true';
 if (authEnabled && (!process.env.BASIC_AUTH_USER || !process.env.BASIC_AUTH_PASS)) {
@@ -50,82 +52,20 @@ function basicAuth(req, res, next) {
 app.use(basicAuth);
 io.engine.use(basicAuth);
 
+app.use((req,res,next)=>{if(!['GET','HEAD','OPTIONS'].includes(req.method)&&!sameOrigin(req))return res.status(403).json({error:'Cross-origin writes are not allowed.'});next();});
 app.use(express.json({ limit: '2mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use('/api',(req,res,next)=>{res.set('Cache-Control','no-store');next();});
+app.get('/runtime-config.js',(req,res)=>res.set('Cache-Control','no-store').type('application/javascript').send('window.AppRuntime=Object.freeze('+JSON.stringify({mode:'server',version})+');'));
+app.use(express.static(path.join(__dirname, 'public'),{setHeaders(res){res.set('Cache-Control','no-cache');}}));
 
-/* ------------------------------------------------------------- storage   */
-async function ensureDirs() {
-  await fsp.mkdir(DATA_DIR, { recursive: true });
-  await fsp.mkdir(BACKUP_DIR, { recursive: true });
-}
-
-async function loadConfig() {
-  await ensureDirs();
-  try {
-    const raw = JSON.parse(await fsp.readFile(CONFIG_FILE, 'utf8'));
-    const normalized = Engine.normalizeConfig(raw);
-    /* Persist the migration so old files are repaired on disk exactly once. */
-    if (JSON.stringify(raw) !== JSON.stringify(normalized)) {
-      await backup('migrate');
-      await fsp.writeFile(CONFIG_FILE, JSON.stringify(normalized, null, 2));
-      console.log('Configuration migrated to the current schema.');
-    }
-    return normalized;
-  } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
-    const fresh = Engine.normalizeConfig(Engine.defaultConfig());
-    fresh.onboardingComplete = false;
-    await fsp.writeFile(CONFIG_FILE, JSON.stringify(fresh, null, 2));
-    console.log('No usable config found — wrote defaults to', CONFIG_FILE);
-    return fresh;
-  }
-}
-
-function stamp() {
-  return new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-}
-
-async function backup(tag) {
-  await ensureDirs();
-  if (!fs.existsSync(CONFIG_FILE)) return null;
-  const name = `config-${stamp()}${tag ? '-' + tag : ''}.json`;
-  await fsp.copyFile(CONFIG_FILE, path.join(BACKUP_DIR, name));
-  await prune();
-  return name;
-}
-
-async function prune() {
-  const files = (await fsp.readdir(BACKUP_DIR)).filter(f => f.endsWith('.json')).sort();
-  const excess = files.length - KEEP_BACKUPS;
-  for (let i = 0; i < excess; i++) {
-    await fsp.unlink(path.join(BACKUP_DIR, files[i])).catch(() => {});
-  }
-}
-
-async function saveConfig(incoming) {
-  if(!incoming||typeof incoming!=='object'||!incoming.assumptions||!Array.isArray(incoming.incomes))throw new Error('Choose a retirement plan with household settings and people.');
-  await ensureDirs();
-  const normalized = Engine.normalizeConfig(incoming);
-  normalized.onboardingComplete = true;
-  /* Reject anything the engine cannot actually run, before it hits disk. */
-  if(!Engine.simulate(normalized).years.length)throw new Error('Choose a planning age that extends into the current year.');
-  await backup(null);
-  await fsp.writeFile(CONFIG_FILE, JSON.stringify(normalized, null, 2));
-  io.emit('config_updated', normalized);
-  return normalized;
-}
-
-async function loadScenarios() {
-  try { return JSON.parse(await fsp.readFile(SCENARIOS_FILE, 'utf8')); }
-  catch { return []; }
-}
-async function writeScenarios(list) {
-  await ensureDirs();
-  await fsp.writeFile(SCENARIOS_FILE, JSON.stringify(list, null, 2));
-}
+// Every mutation is serialized; files are flushed then atomically renamed.
+const loadConfig=()=>store.readConfig();
+async function saveConfig(incoming){const c=await store.saveConfig(incoming);io.emit('config_updated',c);return c;}
+const backup=()=>store.backup();
+const loadScenarios=()=>store.listScenarios();
 
 /* --------------------------------------------------------------- routes  */
-app.get('/api/system',(req,res)=>res.json({mode:'server',authEnabled,authManagedByEnvironment:true,port:PORT}));
+app.get('/api/system',(req,res)=>res.json({mode:'server',authEnabled,authManagedByEnvironment:true,port:PORT,version}));
 app.get('/api/config', async (req, res) => {
   try { res.json(await loadConfig()); }
   catch (err) { res.status(500).json({ error: err.message }); }
@@ -148,50 +88,11 @@ app.post('/api/backup', async (req, res) => {
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
-app.get('/api/backups', async (req, res) => {
-  try {
-    await ensureDirs();
-    const files = (await fsp.readdir(BACKUP_DIR)).filter(f => f.endsWith('.json')).sort().reverse();
-    const out = [];
-    for (const f of files) {
-      const st = await fsp.stat(path.join(BACKUP_DIR, f));
-      out.push({ file: f, size: st.size, modified: st.mtime });
-    }
-    res.json(out);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.post('/api/backups/restore', async (req, res) => {
-  try {
-    const file = path.basename(String(req.body.file || ''));   // no path traversal
-    const full = path.join(BACKUP_DIR, file);
-    if (!file.endsWith('.json') || !fs.existsSync(full)) {
-      return res.status(404).json({ ok: false, error: 'That backup no longer exists.' });
-    }
-    const config = await saveConfig(JSON.parse(await fsp.readFile(full, 'utf8')));
-    res.json({ ok: true, config });
-  } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
-});
-
-app.get('/api/scenarios', async (req, res) => res.json(await loadScenarios()));
-
-app.post('/api/scenarios', async (req, res) => {
-  try {
-    const name = String(req.body.name || '').trim().slice(0, 60);
-    if (!name) return res.status(400).json({ ok: false, error: 'Name a scenario before saving it.' });
-    const config = Engine.normalizeConfig(req.body.config);
-    const list = (await loadScenarios()).filter(s => s.name !== name);
-    list.push({ name, savedAt: new Date().toISOString(), config });
-    await writeScenarios(list);
-    res.json({ ok: true, scenarios: list });
-  } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
-});
-
-app.delete('/api/scenarios/:name', async (req, res) => {
-  const list = (await loadScenarios()).filter(s => s.name !== req.params.name);
-  await writeScenarios(list);
-  res.json({ ok: true, scenarios: list });
-});
+app.get('/api/backups',async(req,res,next)=>{try{res.json(await store.listBackups());}catch(e){next(e);}});
+app.post('/api/backups/restore',async(req,res)=>{try{const config=await store.restore(req.body.file);io.emit('config_updated',config);res.json({ok:true,config});}catch(e){res.status(400).json({ok:false,error:e.message});}});
+app.get('/api/scenarios',async(req,res,next)=>{try{res.json(await loadScenarios());}catch(e){next(e);}});
+app.post('/api/scenarios',async(req,res)=>{try{res.json({ok:true,scenarios:await store.saveScenario(req.body.name,req.body.config)});}catch(e){res.status(400).json({ok:false,error:e.message});}});
+app.delete('/api/scenarios/:name',async(req,res,next)=>{try{res.json({ok:true,scenarios:await store.deleteScenario(req.params.name)});}catch(e){next(e);}});
 
 /* Server-side projection, handy for scripting or a future export job. */
 app.get('/api/projection', async (req, res) => {
@@ -230,7 +131,18 @@ io.on('connection', async socket => {
   catch (err) { console.error('Could not send config to client:', err.message); }
 });
 
-server.listen(PORT, BIND, () => {
-  console.log(`Lifecycle Drawdown Engine listening on ${BIND}:${PORT}`);
-  console.log(`Data directory: ${DATA_DIR}`);
+app.use('/api',(req,res)=>res.status(404).json({error:'Unknown API endpoint.'}));
+app.use((error,req,res,next)=>{
+  if(res.headersSent)return next(error);
+  const status=error.status===413?413:error instanceof SyntaxError?400:500;
+  console.error('Request failed:',error.message);
+  res.status(status).json({ok:false,error:status===413?'Request exceeds the 2 MB limit.':status===400?'Invalid JSON request.':'Server storage could not complete the request. Check server logs.'});
 });
+store.init().then(()=>{ready=true;server.listen(PORT,BIND,()=>console.log(`Retirement Calculator ${version} listening on ${BIND}:${PORT}`));}).catch(error=>{console.error('Startup failed:',error.message);process.exitCode=1;});
+let stopping=false;
+async function shutdown(){
+  if(stopping)return;stopping=true;ready=false;
+  const deadline=setTimeout(()=>process.exit(1),10000);deadline.unref();
+  await new Promise(resolve=>io.close(resolve));await store.queue;clearTimeout(deadline);
+}
+process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);

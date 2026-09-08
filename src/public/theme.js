@@ -2,7 +2,7 @@
   'use strict';
   let saved='light';try{saved=localStorage.getItem('retirement-theme')||'light';}catch(_){}
   document.documentElement.dataset.theme=saved==='dark'?'dark':'light';
-  function apply(theme,persist=true){document.documentElement.dataset.theme=theme;try{localStorage.setItem('retirement-theme',theme);}catch(_){}if(persist)AppStorage.setPreference('theme',theme);document.querySelectorAll('[data-dark-appearance]').forEach(c=>c.checked=theme==='dark');window.dispatchEvent(new CustomEvent('themechange',{detail:theme}));}
+  function apply(theme,persist=true){document.documentElement.dataset.theme=theme;try{localStorage.setItem('retirement-theme',theme);}catch(_){}if(persist)AppStorage.setPreference('theme',theme).catch(error=>{const status=document.getElementById('file-status');if(status)status.textContent=error.message;});document.querySelectorAll('[data-dark-appearance]').forEach(c=>c.checked=theme==='dark');window.dispatchEvent(new CustomEvent('themechange',{detail:theme}));}
   window.AppTheme={apply};
   document.addEventListener('DOMContentLoaded',()=>{
     document.body.classList.add('app-shell');
@@ -14,12 +14,12 @@
     const bar=document.createElement('div');bar.className='settings-bar';bar.setAttribute('aria-label','Plan file settings');
     bar.innerHTML='<span class="storage-mode" role="status"></span><button class="btn ghost" id="export-json">Export JSON</button><button class="btn ghost" id="import-json">Import JSON</button><input type="file" accept=".json,application/json" id="import-json-file" hidden aria-label="Import retirement plan JSON"><span id="file-status" role="status"></span>';
     aside.insertAdjacentElement('afterend',bar);const status=bar.querySelector('#file-status');
-    const mode=()=>bar.querySelector('.storage-mode').textContent=AppStorage.mode==='server'?'Connected to Docker':'Saved on this device';
+    const mode=()=>bar.querySelector('.storage-mode').textContent=AppStorage.mode==='server'?(AppStorage.online?(AppStorage.realtime?'Connected to Docker':'Connected to server · HTTP sync'):'Server offline · saves unavailable'):(location.protocol==='file:'?'Saved on this device':'Static site · saved in this browser');
     AppStorage.ready.then(mode);window.addEventListener('storagemodechange',mode);
     bar.querySelector('#export-json').onclick=async()=>{try{await AppStorage.ready;AppStorage.download(window.PlanState?.get()||(await(await AppStorage.fetch('/api/config')).json()));status.textContent='Plan exported.';}catch(error){status.textContent=error.message;}};
     const input=bar.querySelector('input');bar.querySelector('#import-json').onclick=()=>input.click();
     input.onchange=async()=>{try{if(!input.files[0])return;const c=await AppStorage.save(JSON.parse(await input.files[0].text()));window.PlanState?.set(c);status.textContent='Plan imported and recalculated.';}catch(error){status.textContent=error.message;}finally{input.value='';}};
-    AppStorage.getPreference('theme').then(theme=>apply(theme||document.documentElement.dataset.theme,false));
+    AppStorage.getPreference('theme').then(theme=>apply(theme||document.documentElement.dataset.theme,false)).catch(error=>status.textContent=error.message);
   });
   window.addEventListener('storage',event=>{if(event.key==='retirement-theme')apply(event.newValue==='dark'?'dark':'light');});
 })();

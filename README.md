@@ -2,16 +2,19 @@
 
 A retirement calculator built for **Canada**, for one adult or a couple. Plan with Canadian tax estimates, CPP/QPP, OAS, RRSP/RRIF and TFSA accounts. Explore when you can retire, how much you can spend after tax, which accounts to withdraw from, and when to sell a rental property.
 
-Run it **offline in your browser**, **on Docker/Unraid**, or **locally with Node.js**. No subscription or external financial account connection is required.
+Run it as a **completely static site on GitHub Pages**, **on Docker/Unraid**, **offline from a ZIP**, or **locally with Node.js**. No subscription or external financial account connection is required.
 
-**Version 1.0.0** · [Download the standalone app](https://github.com/asmegin/Retirement-Calculator/releases/latest/download/retirement-calculator-standalone.zip) · [Releases](https://github.com/asmegin/Retirement-Calculator/releases) · [Version 1.0 release notes](docs/releases/v1.0.0.md)
+**Latest tagged release: 1.0.0** · [Download the standalone app](https://github.com/asmegin/Retirement-Calculator/releases/latest/download/retirement-calculator-standalone.zip) · [Releases](https://github.com/asmegin/Retirement-Calculator/releases) · [Version 1.0 release notes](docs/releases/v1.0.0.md)
 
 If the repository is private, sign in to GitHub with an account that has access before opening these downloads.
+
+The hybrid deployment changes described here are in the current source. The existing `v1.0.0` release and ZIP are unchanged; build this checkout to use the new deployment modes. See the [hybrid deployment guide](docs/hybrid-deployment.md).
 
 ## Contents
 
 - [What it does](#what-it-does)
 - [Choose an installation](#choose-an-installation)
+- [GitHub Pages / static hosting](#github-pages--static-hosting)
 - [Standalone installation](#standalone-installation)
 - [Docker Compose](#docker-compose)
 - [Unraid](#unraid)
@@ -43,11 +46,35 @@ If the repository is private, sign in to GitHub with an account that has access 
 
 | Method | Best for | Requirements | Where the plan is saved |
 | --- | --- | --- | --- |
+| GitHub Pages / static web host | Browser-only use through a website, without running a backend | A recent browser with site storage enabled; GitHub Actions to publish | IndexedDB in each browser, isolated by site and project path |
 | Standalone ZIP | The easiest way to use it on one computer | A recent desktop Edge or Chrome browser | Browser storage on that device |
 | Docker / Unraid | A shared household plan accessible from several devices | Docker Engine/Desktop with Compose, or Unraid | Your mounted server data directory |
 | Node.js source | Local hosting or development | Node.js 22+, npm, and the source files | The directory you set as `DATA_DIR` |
 
 The server hosts **one shared plan**, not separate user accounts. Anyone with access can change that plan. In standalone mode, different browsers or devices have separate plans.
+
+## GitHub Pages / static hosting
+
+No Node process, API, database service, account registration, or WebSocket server is needed at runtime. Calculations and saved plans stay in the visitor's browser. The deployment artifact contains only public client files with blank household defaults.
+
+1. Push the current source and workflows to your GitHub repository.
+2. In **Settings ? Pages ? Build and deployment**, choose **GitHub Actions** as the source. Pages availability for private repositories depends on your GitHub plan. Check the site's visibility before publishing: a private source repository does not necessarily mean a private website.
+3. Open **Actions ? Hybrid checks and GitHub Pages ? Run workflow**, select the branch and enable **Deploy the static calculator to GitHub Pages**.
+4. When the checks and deployment finish, open the URL shown by the deployment, typically `https://YOUR-USERNAME.github.io/Retirement-Calculator/`.
+5. Optional: add a repository Actions variable `ENABLE_GITHUB_PAGES=true` to deploy automatically after pushes to `main`/`master`. Without this setting, ordinary pushes only build and check the Pages artifact.
+
+The workflow does not change repository visibility. For the workflow permissions and environment setup, see [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
+
+To build and preview the same artifact locally, from the repository root:
+
+```bash
+node scripts/build-static.js
+python -m http.server 8080 --directory dist/pages
+```
+
+Use Node.js 22+ for the build, then open **http://localhost:8080**. There are no npm dependencies for the static build. Upload the **contents of `dist/pages`** to any static host. Relative asset, navigation and worker URLs support both `/` and `/Retirement-Calculator/`; use the `.html` links. Never upload `data`, `.env` or the entire repository as the website.
+
+The status reads **Static site ? saved in this browser**. Different devices, browsers, origins and project paths have separate plans. Use Export/Import JSON to move a plan. IndexedDB storage is not encrypted and can be cleared by the browser; keep exports outside the browser. The hosted site requires a connection to load its files; the standalone ZIP is the fully offline option.
 
 ## Standalone installation
 
@@ -80,12 +107,24 @@ Install [Docker with Compose](https://docs.docker.com/compose/install/). Get the
 ```bash
 git clone https://github.com/asmegin/Retirement-Calculator.git
 cd Retirement-Calculator
-docker compose up -d
+```
+
+The current image runs as a non-root user (UID/GID `1000:1000`). On Linux, prepare the bind-mounted folder **before starting** it:
+
+```bash
+mkdir -p data
+sudo chown -R 1000:1000 ./data
+```
+
+After cloning/downloading the repository, run these commands only from its installation directory. For an existing installation, stop the container and back up `data` first. Alternatively, set `APP_UID` and `APP_GID` in `.env` to the folder's existing owner. Docker Desktop normally handles bind-mount permissions for Windows/macOS. The container uses a read-only root filesystem; `/app/data` remains writable. `/healthz` provides a readiness check without exposing plan data.
+
+```bash
+docker compose up -d --build
 ```
 
 Open **http://localhost:3333**, or **http://YOUR-SERVER-IP:3333** from another device on your network.
 
-The included [compose.yaml](compose.yaml) uses `ghcr.io/asmegin/retirement-calculator:1.0.0`, restarts automatically, and stores the shared plan and backups in `./data`. Keep that directory when updating or replacing the container.
+The included [compose.yaml](compose.yaml) can build this checkout or use `ghcr.io/asmegin/retirement-calculator:${APP_VERSION}`. The command above builds the current source; pulling `1.0.0` retrieves the original release. The container restarts automatically and stores the shared plan and backups in `./data`. Keep that directory when updating or replacing the container.
 
 Useful commands, run from the same directory:
 
@@ -102,8 +141,8 @@ To change the host port, copy [.env.example](.env.example) to `.env`, set `HOST_
 To build the image yourself instead of downloading it:
 
 ```bash
-docker build -t retirement-calculator:1.0.0 ./src
-docker run -d --name retirement-calculator --restart unless-stopped -p 3333:3333 -v retirement-calculator-data:/app/data retirement-calculator:1.0.0
+docker build -t retirement-calculator:local ./src
+docker run -d --name retirement-calculator --restart unless-stopped -p 3333:3333 -v retirement-calculator-data:/app/data retirement-calculator:local
 ```
 
 This `docker run` example uses a Docker named volume, separate from Compose's `./data` directory. Use one installation method for a given plan, or transfer the plan with Export/Import JSON.
@@ -123,6 +162,10 @@ In **Docker → Add Container**, use:
 | Host path | `/mnt/user/appdata/retirement-calculator` |
 | WebUI | `http://[IP]:[PORT:3333]` |
 
+For the hybrid source build, build an image on Unraid with `docker build -t retirement-calculator:local ./src` and use `retirement-calculator:local` as **Repository**. The `1.0.0` registry tag remains the original release.
+
+The new image runs as UID/GID `1000:1000`. For appdata owned by Unraid's `nobody:users` (`99:100`), set **Extra Parameters** to `--user 99:100 --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp`. Ensure the mapped appdata folder, existing JSON files and backups are writable by that user. Back up existing appdata before changing ownership or upgrading. With Compose on Unraid, set `APP_UID=99` and `APP_GID=100` instead.
+
 Apply the settings and open the WebUI. The app creates its configuration and backups in the mapped appdata directory. Include this directory in your Unraid backup routine.
 
 Optional HTTP authentication is configured with container variables, described under [Configuration and access](#configuration-and-access). Restart the container after changing them.
@@ -133,7 +176,7 @@ Install [Node.js](https://nodejs.org/) **22 or later**, including npm. Clone or 
 
 ```bash
 cd src
-npm install
+npm ci --ignore-scripts
 npm run build
 ```
 
@@ -158,7 +201,7 @@ Open **http://localhost:3333**. Keep the terminal running; press **Ctrl+C** to s
 
 ## First-time setup
 
-The app contains example values. Replace them and remove any accounts, properties, children, pensions or debts that do not apply to you. A newly initialized server opens setup when you enter a configuration page; you can reopen **Setup Wizard** from any configuration page.
+New installations start with neutral household placeholders, no assets or properties, zero income/benefit estimates, and generic planning assumptions. Setup opens on the first visit. Enter your own information and review every assumption; saved and imported plans retain their existing values. You can reopen **Setup Wizard** from Overview or a configuration page.
 
 Have your account balances, contribution room, pension estimates and property/debt details available.
 
@@ -252,7 +295,11 @@ data/
 
 Back up this directory independently of the container. Do not delete it when updating. Browser-only plans and backups can be lost when browser storage is cleared; keep JSON exports outside the browser.
 
-**Connected to Docker** means the app is using the Node/Docker server and synchronizing saved changes between open pages. If the API or live connection cannot be reached, it falls back to **Saved on this device**. Changes in that mode stay local and are not automatically uploaded on reconnection. To transfer them, export the local plan, reconnect to the server and import it there.
+**Connected to Docker** means the app is using server storage and live synchronization. **Connected to server ? HTTP sync** means saves still go to the server, with periodic refresh when WebSockets are unavailable. **Server offline ? saves unavailable** means a save cannot be confirmed; a previously cached plan may still be viewable. Export JSON to keep unsaved edits. Server failures never switch writes to browser storage, and no unsaved changes are automatically replayed after reconnection.
+
+Static hosting uses atomic IndexedDB transactions for the plan, scenarios and backups, with updates between open tabs. The offline ZIP uses a shared local-storage frame. Existing browser storage is copied on first save without deleting the old keys. Server JSON filenames remain compatible. See [migration and recovery](docs/hybrid-deployment.md#upgrading-and-moving-plans) before upgrading.
+
+The server is a single household workspace: run one server process against a data directory. Concurrent saves are serialized, but the last successful whole-plan save wins. Export alternatives or use scenarios when people edit the plan independently.
 
 ## Updates
 
@@ -267,7 +314,7 @@ docker compose up -d
 
 **Unraid:** back up appdata, change the Repository tag to the desired release and apply/update the container. Keep the `/app/data` mapping.
 
-**Node.js:** back up the data directory, stop the server, get the new source, run `npm install` and `npm run build` from `src`, then restart with the same `DATA_DIR`.
+**Node.js:** back up the data directory, stop the server, get the new source, run `npm ci --ignore-scripts` and `npm run build` from `src`, then restart with the same `DATA_DIR`.
 
 Use a numbered image such as `1.0.0` for a fixed release. The `latest` image also follows builds from the main branch and can contain changes newer than the last release. Before rolling back to older source, keep an export and a copy of the data directory; older versions may not understand newer settings.
 
@@ -323,9 +370,9 @@ For a bug report, use [GitHub Issues](https://github.com/asmegin/Retirement-Calc
 From the repository root:
 
 ```bash
-node scripts/build-client.js
+node scripts/build-static.js
 cd src
-npm install
+npm ci --ignore-scripts
 npm test
 cd ..
 python scripts/package-standalone.py
@@ -335,15 +382,16 @@ Edit `src/public/index.html`, `config.html`, `planning.html` and their shared sc
 
 The standalone packager writes the ZIP and `SHA256SUMS.txt` into `dist`. It includes client assets and user documentation, without server data or configuration secrets.
 
-The calculation suite contains 54 tests in version 1.0. Browser checks additionally exercise a temporary server and offline file pages. They require Python, Playwright, Edge and installed server dependencies:
+Tests cover calculations, durable storage and HTTP/authentication. Browser checks exercise the built static artifact at root and project paths, a temporary server, and offline file pages. They require Python, Playwright, Edge and installed server dependencies:
 
 ```bash
-python -m pip install playwright
+python -m pip install -r src/test/requirements.txt
+python src/test/static-smoke.py
 python src/test/dual-mode-smoke.py
 ```
 
-The browser suite defaults to the installed Microsoft Edge channel. `BROWSER_CHANNEL`, `NODE_EXE` and `NODE_PATH` can override browser/runtime locations.
+The browser suite defaults to the installed Microsoft Edge channel. For Chromium, run `python -m playwright install chromium` and set `BROWSER_CHANNEL=chromium`. `BROWSER_CHANNEL`, `NODE_EXE` and `NODE_PATH` can override browser/runtime locations.
 
-GitHub Actions builds/tests the client and publishes the Docker image on pushes to `main`/`master`. A `v*` release tag must match `src/package.json`; its build publishes a versioned container and creates a GitHub Release with the standalone ZIP, checksum and `docs/releases/<tag>.md` notes. [Workflow](.github/workflows/docker-build.yaml) · [Docker metadata action](https://github.com/docker/metadata-action) · [GitHub release CLI](https://cli.github.com/manual/gh_release_create)
+The [hybrid workflow](.github/workflows/pages.yaml) runs Node and browser checks, verifies a non-root Docker container with persistent data, and makes Pages deployment opt-in. GitHub Actions also builds/tests the client and publishes the Docker image on pushes to `main`/`master`. A `v*` release tag must match `src/package.json`; its build publishes a versioned container and creates a GitHub Release with the standalone ZIP, checksum and `docs/releases/<tag>.md` notes. [Workflow](.github/workflows/docker-build.yaml) · [Docker metadata action](https://github.com/docker/metadata-action) · [GitHub release CLI](https://cli.github.com/manual/gh_release_create)
 
 Third-party browser library notices are in [vendor/LICENSES.txt](src/public/vendor/LICENSES.txt).

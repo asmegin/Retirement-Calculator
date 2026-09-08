@@ -127,6 +127,7 @@ test('10: federal and Ontario age amounts start at 65 and taper independently',(
 test('pensions are opt-in and legacy migration is idempotent with original income preserved',()=>{
   close(E.normalizeConfig(E.defaultConfig()).dbPensions.length,0);
   const c=config(60);c.incomes[1].hooppStartAge=60;c.incomes[0].pension2Amount=1000;c.incomes[0].pension2StartAge=60;
+  c.hooppTiers=[{startAge:60,lifetime:4180,bridge:990}];
   const normalized=E.normalizeConfig(c);assert.equal(normalized.dbPensions.length,2);assert.equal(normalized.incomes[1].hooppStartAge,null);
   assert.deepEqual(E.normalizeConfig(normalized),normalized);
   close(run(normalized).years[0].pension,1000*12+(4180+990)*12);

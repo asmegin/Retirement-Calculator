@@ -86,21 +86,16 @@
   /* ------------------------------------------------------------- defaults  */
   function defaultConfig() {
     return {
-      incomes: [
-        { name: 'Jon', birthYear: 1985, salary: 130000, salaryGrowth: 3,
-          cppBaseAt65: 1141, oasBaseAt65: 751, targetRetireAge: 55,
-          cppStartAge: 65, oasStartAge: 65, hooppStartAge: null,
-          rrspRoomOpening: 112212, tfsaRoomOpening: 103319,
-          hbpAnnual: 1516, hbpYears: 5 },
-        { name: 'Kristen', birthYear: 1987, salary: 105000, salaryGrowth: 3,
-          cppBaseAt65: 1141, oasBaseAt65: 751, targetRetireAge: 55,
-          cppStartAge: 65, oasStartAge: 65, hooppStartAge: null,
-          rrspRoomOpening: 112212, tfsaRoomOpening: 103319,
-          hbpAnnual: 1516, hbpYears: 10 }
-      ],
+      onboardingComplete: false,
+      incomes: [0,1].map(function(k){return {
+        name:'Person '+(k+1),birthYear:new Date().getFullYear()-40+k*2,
+        salary:0,salaryGrowth:0,cppBaseAt65:0,oasBaseAt65:0,targetRetireAge:65,
+        cppStartAge:65,oasStartAge:65,hooppStartAge:null,
+        rrspRoomOpening:0,tfsaRoomOpening:0,hbpAnnual:0,hbpYears:0
+      };}),
       assumptions: {
         province: 'ON', householdType: 'couple', gisEnabled: true,
-        desiredMonthlyIncome: 13000,
+        desiredMonthlyIncome: 4000,
         inflation: 2.1,
         rentalIncomeInflation: 1.5,
         targetDeathAge: 90,
@@ -128,55 +123,12 @@
           { untilAge: 85, factor: 92 },
           { untilAge: 999, factor: 85 }
         ],
-        childcare: {
-          childrenBirthYears: [2018, 2020, 2022],
-          items: [
-            { name: 'Daycare', amount: 10000, startYear: 2026, endYear: 2026, declinePerYear: 0 },
-            { name: 'Aftercare', amount: 10000, startYear: 2026, endYear: 2031, declinePerYear: 2000 },
-            { name: 'Summer camps', amount: 6000, startYear: 2026, endYear: 2032, declinePerYear: 1000 }
-          ]
-        }
+        childcare: {childrenBirthYears:[],items:[]}
       },
-      accounts: [
-        { name: 'Questrade RRSP', owner: 'Jon', type: 'RRSP', balance: 40000, contribAmt: 750,
-          contribFreq: 'monthly', contribGrowth: 3, growthRate: 7, solveToTarget: true },
-        { name: 'Questrade TFSA', owner: 'Jon', type: 'TFSA', balance: 3000, contribAmt: 10000,
-          contribFreq: 'yearly', contribGrowth: 2, growthRate: 7, flexible: true, reinvestTarget: true },
-        { name: 'Manulife Group RRSP', owner: 'Jon', type: 'RRSP', balance: 50000, contribAmt: 262,
-          contribFreq: 'semimonthly', contribGrowth: 3, growthRate: 7, flexible: false,
-          employerMatchPct: 5, annualBonus: 0, hbpAccount: true },
-        { name: 'Tangerine TFSA', owner: 'Kristen', type: 'TFSA', balance: 1000, contribAmt: 50,
-          contribFreq: 'weekly', contribGrowth: 2, growthRate: 5, flexible: true },
-        { name: 'Tangerine RRSP', owner: 'Kristen', type: 'RRSP', balance: 30000, contribAmt: 50,
-          contribFreq: 'weekly', contribGrowth: 3, growthRate: 5, flexible: true, hbpAccount: true }
-      ],
-      hooppTiers: [
-        { startAge: 55, lifetime: 2460, bridge: 540 },
-        { startAge: 60, lifetime: 4180, bridge: 990 },
-        { startAge: 65, lifetime: 5550, bridge: 0 }
-      ],
+      accounts: [],
+      hooppTiers: [],
       dbPensions: [],
-      realEstate: [
-        { name: 'Principal Residence', type: 'principal', value: 950000, appreciation: 3,
-          mortgage: 478533.23, interestRate: 3.69, renewalYear: 2028, renewalRate: 3.69,
-          paymentBiweekly: 1500, paymentMonthly: 0, payoffYear: 2042,
-          grossRentMonthly: 0, annualPropertyTax: 6000, annualInsurance: 1800, annualMaintenance: 3000,
-          attachToRental: false, interestDeductible: false, reinvestOnPayoff: true,
-          acb: 0, saleYear: 0, sellingCostPct: 5, ccaEnabled: false, uccPool: 0 },
-        { name: 'Rental Property', type: 'rental', value: 650000, appreciation: 3,
-          mortgage: 426531.48, interestRate: 3.73, renewalYear: 2028, renewalRate: 3.73,
-          paymentBiweekly: 0, paymentMonthly: 2118.69, payoffYear: 2052,
-          grossRentMonthly: 4583, annualPropertyTax: 4820, annualInsurance: 2111, annualMaintenance: 2000,
-          otherAnnualInterest: 0,
-          attachToRental: false, interestDeductible: true, reinvestOnPayoff: true,
-          acb: 735000, saleYear: 0, sellingCostPct: 5, ccaEnabled: true, uccPool: 361225 },
-        { name: 'Principal HELOC', type: 'heloc', value: 0, appreciation: 0,
-          mortgage: 291400, interestRate: 3.75, renewalYear: 2028, renewalRate: 3.75,
-          paymentBiweekly: 753.51, paymentMonthly: 0, payoffYear: 2048,
-          grossRentMonthly: 0, annualPropertyTax: 0, annualInsurance: 0, annualMaintenance: 0,
-          attachToRental: true, interestDeductible: true, reinvestOnPayoff: true,
-          acb: 0, saleYear: 0, sellingCostPct: 0, ccaEnabled: false, uccPool: 0 }
-      ]
+      realEstate: []
     };
   }
 
