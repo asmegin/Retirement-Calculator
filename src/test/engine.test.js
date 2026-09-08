@@ -155,3 +155,22 @@ test('retirement search supports single, impossible target, zero spending, and e
   c.assumptions.desiredMonthlyIncome=10000;assert.equal(E.solveRetirementAges(c,{startYear:2026,maxAge:65}).found,false);
   assert.equal(E.solveRetirementAges(c,{startYear:2026,maxAge:59}).found,false);
 });
+
+test('close retirement searches compare calendar years, respect fixed dates and preserve earliest completion',()=>{
+  const c=config(60);c.incomes[1].birthYear-=8;c.incomes[1].targetRetireAge=70;
+  c.assumptions.targetDeathAge=90;
+  const opts={startYear:2026,maxAge:75,maxYearGap:3,preferClose:true};
+  const candidates=E.retirementCandidates(c,opts);
+  assert.ok(candidates.length);
+  candidates.forEach(a=>assert.ok(Math.abs(c.incomes[0].birthYear+a[0]-c.incomes[1].birthYear-a[1])<=3));
+  const together=E.solveRetirementAges(c,{...opts,maxYearGap:0});
+  assert.equal(together.found,true);assert.equal(together.years[0],together.years[1]);
+  assert.notEqual(together.ages[0],together.ages[1]);
+  const fixed=E.solveRetirementAges(c,{...opts,fixedPerson:1});
+  assert.equal(fixed.found,true);assert.equal(fixed.ages[1],70);
+  const latest=a=>Math.max(c.incomes[0].birthYear+a[0],c.incomes[1].birthYear+a[1]);
+  candidates.slice(1).forEach((a,i)=>assert.ok(latest(a)>=latest(candidates[i])));
+  c.incomes[1].targetRetireAge=55;
+  assert.equal(E.solveRetirementAges(c,opts).found,false);
+  c.assumptions.householdType='single';assert.equal(E.solveRetirementAges(c,opts).found,true);
+});

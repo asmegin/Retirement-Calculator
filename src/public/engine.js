@@ -1583,9 +1583,12 @@
       return ages;
     });
     var candidates = [];
-    ranges[0].forEach(function(a) { ranges[1].forEach(function(b) { candidates.push([a,b]); }); });
+    function gap(x) { return single ? 0 : Math.abs(cfg.incomes[0].birthYear+x[0]-cfg.incomes[1].birthYear-x[1]); }
+    ranges[0].forEach(function(a) { ranges[1].forEach(function(b) {
+      if(opts.maxYearGap==null || gap([a,b])<=Math.max(0,num(opts.maxYearGap)))candidates.push([a,b]);
+    }); });
     function latest(x) { return single ? cfg.incomes[0].birthYear+x[0] : Math.max(cfg.incomes[0].birthYear+x[0],cfg.incomes[1].birthYear+x[1]); }
-    return candidates.sort(function(a,b) { return latest(a)-latest(b) || (a[0]+a[1])-(b[0]+b[1]) || a[0]-b[0]; });
+    return candidates.sort(function(a,b) { return latest(a)-latest(b) || (opts.preferClose ? gap(a)-gap(b) : 0) || (a[0]+a[1])-(b[0]+b[1]) || a[0]-b[0]; });
   }
   function solveRetirementAges(cfg, opts) {
     opts = opts || {}; cfg = normalizeConfig(cfg);
@@ -1732,7 +1735,7 @@
     monteCarloRun: monteCarloRun, monteCarloSync: monteCarloSync,
     buildTimeline: buildTimeline, normalizeConfig: normalizeConfig, defaultConfig: defaultConfig,
     personTax: personTax, marginalRate: marginalRate, householdTax: householdTax,
-    buildSchedule: buildSchedule, rrifFactor: rrifFactor,
+    buildSchedule: buildSchedule, rrifFactor: rrifFactor, pensionEstimate: hooppAt,
     childcareSpend: childcareSpend, childcareCap: childcareCap,
     WITHDRAWAL_ORDERS: WITHDRAWAL_ORDERS, TAX_BASE_YEAR: TAX_BASE_YEAR,
     PROVINCES: PROVINCES, gisBenefit:gisBenefit, payrollCPP:payrollCPP,

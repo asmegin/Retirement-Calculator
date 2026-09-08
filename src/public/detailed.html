@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script src="./theme.js"></script><script src="./storage.js"></script><script src="./worker-bundle.js"></script><script src="./workers.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Detailed Overview · Retirement</title>
+<title>Plan details · Retirement</title>
 <script src="./vendor/socket.io.min.js"></script>
 <script src="./vendor/chart.umd.js"></script>
 <script src="./planning-core.js"></script>
@@ -105,14 +105,7 @@
   <div class="metric-card"><label>Net worth at plan end</label><div class="val" id="m-nw">$0</div><div class="sub" id="m-nw-sub">&nbsp;</div></div>
 </div>
 
-<div class="card">
-  <section class="card" aria-labelledby="planner-title" style="margin:1rem 0;padding:1.2rem;border:1px solid #334155;border-radius:12px;background:var(--panel)">
-  <h2 id="planner-title" style="margin-top:0;font-size:1.2rem">Your action plan</h2>
-  <p id="planner-status" role="status" aria-live="polite">Enter a spending goal to explore retirement ages.</p>
-  <ol id="action-steps"></ol><div id="estate-action"><button class="btn ghost" id="maximize-estate">Find steps to increase final net worth</button><button class="btn ghost" id="cancel-estate" hidden>Cancel</button><button class="btn" id="apply-estate" hidden>Use this withdrawal plan</button><p id="estate-action-status" role="status"></p><details id="estate-schedule" hidden><summary>Year-by-year withdrawal steps</summary><div class="data-scroll" id="estate-action-schedule"></div></details></div><p id="planner-context" style="color:var(--muted)"></p>
-  <div style="display:flex;gap:.6rem;flex-wrap:wrap"><button class="btn" id="planner-apply" hidden>Use these retirement ages</button><button class="btn ghost" id="planner-both">Find ages for both</button><a class="btn ghost" href="./pensions.html">Edit pensions</a></div>
-  <details class="planner-explanation"><summary>How this estimate works</summary><p style="color:var(--muted);font-size:.8rem">Move either retirement slider to hold that age fixed and recalculate the other. Searches whole years from today through age 75 (before the plan ends); past retirement dates stay fixed. Uses your market assumption, taxes, contributions and spending phases. A funded projection is an estimate, not a guarantee. Pension start ages stay as entered unless linked to retirement.</p></details>
-</section>
+<div class="card dashboard-controls">
 <div class="controls">
     <div class="ctl">
       <label class="title" id="lbl-p1">Person 1 retirement age: <span id="p1-age-val" style="color:var(--accent);font-size:1.3rem">55</span></label>
@@ -267,6 +260,6 @@
 <dialog id="setup-host" aria-label="Setup Wizard" style="width:min(1050px,98vw);height:94vh;padding:0;border:1px solid #334155;background:#16223f;border-radius:12px">
   <iframe id="setup-frame" title="Household Setup Wizard" style="border:0;width:100%;height:100%"></iframe>
 </dialog>
-<script src="./dashboard.js"></script><script src="./action-plan.js"></script>
+<script src="./dashboard.js"></script>
 </body>
 </html>

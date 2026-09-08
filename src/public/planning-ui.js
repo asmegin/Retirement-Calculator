@@ -45,12 +45,15 @@ function render(){renderScenarioControls();renderOptimizationControls();refresh(
 function renderScenarioControls(){
   sandbox=clone(config);$('scenario-controls').replaceChildren();const g=grid($('scenario-controls'));
   const details={name:'My alternative',downsizeAge:70,replacementValue:500000,downsize:false};sandbox._scenario=details;
-  const add=(obj,key,label,help,type,options)=>{const f=field(obj,key,label,help,type,options);const control=f.querySelector('input,select');control.onchange=()=>{obj[key]=type==='checkbox'?control.checked:type==='number'?Number(control.value):control.value;clearTimeout(sandboxTimer);sandboxTimer=setTimeout(renderSandbox,150);};g.appendChild(f);};
+  const downsizeFields=[];
+  const add=(obj,key,label,help,type,options)=>{const f=field(obj,key,label,help,type,options);const control=f.querySelector('input,select');control.onchange=()=>{obj[key]=type==='checkbox'?control.checked:type==='number'?Number(control.value):control.value;downsizeFields.forEach(row=>row.hidden=!details.downsize);clearTimeout(sandboxTimer);sandboxTimer=setTimeout(renderSandbox,250);};g.appendChild(f);return f;};
   add(details,'name','Scenario name','Name this alternative for saving and comparison.','text');
   people().forEach((_,k)=>{add(sandbox.incomes[k],'targetRetireAge',sandbox.incomes[k].name+': retire at','Only this sandbox changes; your workspace baseline remains unchanged.','number');add(sandbox.incomes[k],'cppStartAge',sandbox.incomes[k].name+': CPP/QPP start','Try 60 versus 70; QPP supports deferral to 72.','number');});
-  add(details,'downsize','Downsize primary home','Sell the first principal residence at the chosen age and buy a mortgage-free replacement using the proceeds.','checkbox');
-  add(details,'downsizeAge','Downsize at Person 1 age','Calendar year is calculated from Person 1’s birth year.','number');
-  add(details,'replacementValue','Replacement home value today','Estimated value today; projected forward using the original property appreciation assumption. The purchase consumes cash and creates a replacement property.','number');
+  const hasHome=config.realEstate.some(p=>p.type==='principal');
+  const toggle=add(details,'downsize','Downsize primary home',hasHome?'Sell your primary home at the chosen age and buy a mortgage-free replacement.':'Add a primary residence under Properties to compare downsizing.','checkbox');toggle.querySelector('input').disabled=!hasHome;
+  downsizeFields.push(add(details,'downsizeAge','Downsize at Person 1 age','The sale year follows Person 1\'s birth year.','number'));
+  downsizeFields.push(add(details,'replacementValue','Replacement home value today','Price of the smaller home today. Future price growth follows your current home.','number'));
+  downsizeFields.forEach(row=>row.hidden=true);
 }
 function scenarioConfig(){
   const c=clone(sandbox);delete c._scenario;delete c.assumptions.withdrawalPlan;

@@ -45,7 +45,8 @@
     <button class="btn ghost" onclick="openWizard()">Setup Wizard</button>
     <input type="file" id="import-file" accept="application/json" hidden onchange="importConfig(event)">
     <button class="btn ghost" onclick="backupNow()">Back up now</button>
-    <button class="btn" onclick="save()">Save changes</button>
+    <span id="settings-save-status" class="settings-save-status" role="status">Changes save when you select Save changes.</span>
+    <button class="btn" id="save-settings" onclick="save()">Save changes</button>
   </div>
 </div>
 

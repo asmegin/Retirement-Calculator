@@ -2,6 +2,8 @@
 const E = window.RetireEngine;
 const page=document.body.dataset.page||'household';
 let config = {};
+let settingsDirty=false;
+function markSettingsDirty(){if(page==='app-config')return;settingsDirty=true;el('settings-save-status').textContent='Unsaved changes';}
 
 const schema = {
   incomes: {
@@ -217,8 +219,8 @@ function renderWizard() {
       const heading=document.createElement('h3'); heading.textContent='Pensions (optional)';body.appendChild(heading);
       wizardDraft.dbPensions.forEach(plan=>{
         const section=document.createElement('div');section.className='item-row';body.appendChild(section);
-        schema.dbPensions.fields.forEach(f=>wizardField(section,plan,f));
-        section.appendChild(pensionTiers(plan,renderWizard));
+        const more=document.createElement('div');more.className='item-row';
+        pensionFields(plan,wizardPeople(),section,more);section.append(advanced(more));
         const remove=document.createElement('button');remove.className='btn danger';remove.textContent='Remove pension';remove.onclick=()=>{wizardDraft.dbPensions.splice(wizardDraft.dbPensions.indexOf(plan),1);renderWizard();};section.appendChild(remove);
       });
       const addPension=document.createElement('button');addPension.className='btn ghost';addPension.textContent='Add pension';addPension.onclick=()=>{wizardDraft.dbPensions.push(newPension(wizardPeople()[0].name));renderWizard();};body.appendChild(addPension);
@@ -237,7 +239,7 @@ async function wizardMove(direction) {
     const normalized=E.normalizeConfig(wizardDraft);E.simulate(normalized);
     const res=await AppStorage.fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(normalized)});
     const data=await res.json();if(!res.ok)throw new Error(data.error || 'Could not save setup');
-    config=data.config;render();closeWizard();toast('Setup saved');
+    config=data.config;settingsDirty=false;el('settings-save-status').textContent='All changes saved';render();closeWizard();toast('Setup saved');
   } catch(err){el('wizard-error').textContent=err.message;}
   finally{el('wizard-next').disabled=false;}
 }
@@ -246,7 +248,6 @@ async function init() {
   config = E.normalizeConfig(await (await AppStorage.fetch('/api/config')).json());
   config.assumptions.spendingMode='target';
   render();
-  if(page==='app-config')loadBackups();
   if (config.onboardingComplete === false || new URLSearchParams(location.search).has('wizard')) openWizard();
 }
 
@@ -255,13 +256,14 @@ function advanced(content,label='Advanced Options') {
 }
 function render() {
   const editor=el('editor');editor.replaceChildren();
-  const titles={household:'Household',employment:'Employment',properties:'Properties',pensions:'Pensions','app-config':'App Config'};
-  el('page-title').textContent=titles[page]||'Household';document.title=el('page-title').textContent+' ? Retirement';
-  if(page==='app-config'){editor.append(systemSection(),backupSection());queueMicrotask(loadBackups);return;}
-  editor.appendChild(assumptionsSection());
-  if(['household','employment','pensions'].includes(page))editor.appendChild(listSection('incomes'));
-  if(page==='household'){editor.append(listSection('accounts'),advanced(phasesSection(),'Spending changes over time'),advanced(estateSection(),'Estate and survivor settings'));}
-  if(page==='employment')editor.appendChild(advanced(childcareSection(),'Childcare expenses'));
+  const titles={household:'Household',accounts:'Accounts','plan-settings':'Plan settings',employment:'Employment',properties:'Properties',pensions:'Pensions','app-config':'App Config'};
+  el('page-title').textContent=titles[page]||'Household';document.title=el('page-title').textContent+' - Retirement';
+  if(page==='app-config'){el('save-settings').hidden=true;el('settings-save-status').textContent='Appearance saves automatically';editor.append(systemSection(),backupSection());queueMicrotask(loadBackups);return;}
+  if(page!=='accounts')editor.appendChild(assumptionsSection());
+  if(['household','accounts','employment','pensions','plan-settings'].includes(page))editor.appendChild(listSection('incomes'));
+  if(page==='household')editor.appendChild(childcareSection());
+  if(page==='accounts')editor.prepend(listSection('accounts'));
+  if(page==='plan-settings')editor.append(advanced(phasesSection(),'Spending changes over time'),advanced(estateSection(),'Estate and survivor settings'));
   if(page==='properties'){editor.appendChild(listSection('realEstate'));editor.append(advanced(debtComparisonSection(),'Compare extra debt payments with investing'));}
   if(page==='pensions'){editor.appendChild(listSection('dbPensions'));editor.appendChild(advanced(earningsSection(),'CPP / QPP earnings history'));}
 }
@@ -289,7 +291,8 @@ function field(f, value, onchange) {
     const opts = f.type === 'owner' ? [...config.incomes.slice(0, config.assumptions.householdType === 'single' ? 1 : 2).map(p=>p.name), ...(f.label === 'Member' ? [] : ['Joint'])] : f.options;
     opts.forEach(o => {
       const opt = document.createElement('option');
-      opt.value = o; opt.textContent = String(o);
+      const names={single:'One adult',couple:'Two adults',TAXABLE:'Non-registered investments',CORP:'Company investments',DC:'Workplace pension account',principal:'Primary residence',rental:'Rental property',heloc:'Line of credit (HELOC)',deterministic:'Expected returns',conservative:'Lower returns', 'bad-decade':'Poor first decade'};
+      opt.value = o; opt.textContent = names[o]||String(o);
       if (String(value) === String(o)) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -309,8 +312,8 @@ function field(f, value, onchange) {
 }
 
 function assumptionsSection() {
-  const sections={household:['householdType','province','desiredMonthlyIncome','targetDeathAge','inflation','returnMode','conservativeDelta','badDecadeDelta','mcRuns','mcVolatility','spendingIncludesDebtPayments','applySpendingBeforeRetirement','reinvestSurplus'],employment:['rrspMinMarginalRate','rrspGoalCompletion','optimizeContributions','reinvestRefund','contributionSlice'],properties:['rentalIncomeInflation','vacancyRate','rentalOwnerSplit','reinvestPayoffPayments'],pensions:['optimizePensionSplit','gisEnabled']};
-  const sec=document.createElement('div');sec.className='section';const title=document.createElement('h2');title.textContent={household:'Your plan',employment:'Savings and RRSP goals',properties:'Property defaults',pensions:'Pension and benefit settings'}[page];sec.append(title);
+  const sections={household:['householdType'],'plan-settings':['province','desiredMonthlyIncome','targetDeathAge','inflation','returnMode','conservativeDelta','badDecadeDelta','mcRuns','mcVolatility','spendingIncludesDebtPayments','applySpendingBeforeRetirement','reinvestSurplus'],employment:['rrspMinMarginalRate','rrspGoalCompletion','optimizeContributions','reinvestRefund','contributionSlice'],properties:['rentalIncomeInflation','vacancyRate','rentalOwnerSplit','reinvestPayoffPayments'],pensions:['optimizePensionSplit','gisEnabled']};
+  const sec=document.createElement('div');sec.className='section';const title=document.createElement('h2');title.textContent={household:'Household type','plan-settings':'Spending and assumptions',employment:'Savings and RRSP goals',properties:'Property defaults',pensions:'Pension and benefit settings'}[page];sec.append(title);
   const row=document.createElement('div');row.className='item-row';const more=document.createElement('div');more.className='item-row';
   [...assumptionFields,...assumptionToggles.map(f=>({...f,type:'checkbox'}))].filter(f=>(sections[page]||[]).includes(f.key)).forEach(f=>{
     const target=['householdType','province','desiredMonthlyIncome','rrspGoalCompletion','optimizeContributions','gisEnabled','optimizePensionSplit'].includes(f.key)?row:more;
@@ -340,14 +343,18 @@ function phasesSection() {
 function childcareSection() {
   const cc = config.assumptions.childcare;
   const sec = document.createElement('div'); sec.className = 'section';
-  sec.innerHTML = '<h2>Childcare deduction</h2><div class="notice">Claimed automatically by the spouse with lower income before the childcare deduction, capped at the CRA limits ($8,000 per child under 7, $5,000 ages 7 to 16) and at two thirds of that spouse\'s earned income. Each cost line runs from its start year to its end year, dropping by the decline amount every year.</div>';
+  sec.innerHTML = '<h2>Children</h2><div class="notice">Claimed automatically by the spouse with lower income before the childcare deduction, capped at the CRA limits ($8,000 per child under 7, $5,000 ages 7 to 16) and at two thirds of that spouse\'s earned income. Each cost line runs from its start year to its end year, dropping by the decline amount every year.</div>';
 
-  const kidsRow = document.createElement('div'); kidsRow.className = 'item-row';
-  kidsRow.appendChild(field({key:'childrenBirthYears',label:'Children\'s birth years (comma separated)', type:'text'},
-    cc.childrenBirthYears.join(', '),
-    v => cc.childrenBirthYears = String(v).split(',').map(x => parseInt(x.trim(),10)).filter(x => x > 1900)));
-  sec.appendChild(kidsRow);
+  const children=document.createElement('div');children.className='children-list';sec.append(children);
+  cc.childrenBirthYears.forEach((year,i)=>{
+    const row=document.createElement('div');row.className='item-row child-row';
+    row.append(field({key:'birthYear',label:'Child '+(i+1)+' birth year',type:'number'},year,v=>cc.childrenBirthYears[i]=v));
+    const remove=document.createElement('button');remove.className='btn ghost';remove.textContent='Remove child';remove.onclick=()=>{cc.childrenBirthYears.splice(i,1);render();};row.append(remove);children.append(row);
+  });
+  if(!cc.childrenBirthYears.length){const note=document.createElement('p');note.className='inline-help';note.textContent='No children added. Add their birth years to include childcare in your plan.';sec.append(note);}
+  const addChild=document.createElement('button');addChild.className='btn ghost';addChild.textContent='Add child';addChild.onclick=()=>{cc.childrenBirthYears.push(new Date().getFullYear());render();};sec.append(addChild);
 
+  const costs=document.createElement('div');
   cc.items.forEach((it, i) => {
     const row = document.createElement('div'); row.className = 'item-row';
     row.appendChild(field({key:'name',label:'Cost', type:'text'}, it.name, v => it.name = v));
@@ -358,11 +365,11 @@ function childcareSection() {
     const del = document.createElement('button'); del.className = 'btn danger'; del.textContent = 'Remove';
     del.onclick = () => { cc.items.splice(i,1); render(); };
     row.appendChild(del);
-    sec.appendChild(row);
+    costs.appendChild(row);
   });
   const add = document.createElement('button'); add.className = 'btn ghost'; add.textContent = 'Add cost';
-  add.onclick = () => { cc.items.push({name:'New cost', amount:0, startYear:new Date().getFullYear(), endYear:0, declinePerYear:0}); render(); };
-  sec.appendChild(add);
+  add.onclick = () => { cc.items.push({name:'New cost', amount:0, startYear:new Date().getFullYear(), endYear:new Date().getFullYear(), declinePerYear:0}); render(); };
+  costs.appendChild(add);sec.appendChild(advanced(costs,'Childcare expenses'));
   return sec;
 }
 
@@ -370,27 +377,31 @@ function personFieldVisible(key){
   if(key.startsWith('fhsa')&&!config.accounts.some(a=>a.type==='FHSA'&&a.enabled!==false))return false;
   const employment=['salary','salaryGrowth','incorporated','eligibleDividends','nonEligibleDividends','annualDeductions','pensionAdjustment'];
   const pension=['cppBaseAt65','cppStartAge','cppPlan','oasBaseAt65','oasStartAge','gisEligible','gisIncomeOpening','gainsEligible','rrifConversionAge'];
+  if(page==='household')return ['name','birthYear'].includes(key);
+  if(page==='plan-settings')return key==='targetRetireAge';
+  if(page==='accounts')return ['rrspRoomOpening','tfsaRoomOpening','hbpAnnual','hbpYears','hbpRepaymentBudget','fhsaOpenYear','fhsaRoomOpening','fhsaLifetimeContributions'].includes(key);
   if(key==='name')return true;if(page==='employment')return employment.includes(key);if(page==='pensions')return pension.includes(key);
   return !employment.includes(key)&&!pension.includes(key);
 }
 function listSection(cat) {
   const spec=schema[cat],sec=document.createElement('div');sec.className='section';sec.dataset.category=cat;
-  const h=document.createElement('h2');h.textContent=cat==='incomes'?({household:'People',employment:'Work income',pensions:'Government pensions'}[page]):spec.title;sec.append(h);
+  const h=document.createElement('h2');h.textContent=cat==='incomes'?({household:'People',accounts:'Contribution room and home buyer repayments','plan-settings':'Retirement ages',employment:'Work income',pensions:'Government pensions'}[page]):spec.title;sec.append(h);
   if(cat==='dbPensions')sec.id='pensions';
-  const core={accounts:['name','owner','type','balance'],realEstate:['name','ownerSplit','type','value','mortgage'],dbPensions:['name','owner','startAge','lifetime'],incomes:page==='household'?['name','birthYear','targetRetireAge']:page==='employment'?['name','salary','incorporated']:['name','cppBaseAt65','cppStartAge','oasBaseAt65','oasStartAge']};
+  const core={accounts:['name','owner','type','balance'],realEstate:['name','ownerSplit','type','value','mortgage'],dbPensions:['name','owner','startAge','lifetime'],incomes:page==='household'?['name','birthYear']:page==='accounts'?['rrspRoomOpening','tfsaRoomOpening']:page==='plan-settings'?['targetRetireAge']:page==='employment'?['name','salary','incorporated']:['name','cppBaseAt65','cppStartAge','oasBaseAt65','oasStartAge']};
   config[cat].forEach((item,i)=>{
     if(config.assumptions.householdType==='single'&&((cat==='incomes'&&i===1)||(['accounts','dbPensions'].includes(cat)&&item.owner===config.incomes[1].name)))return;
     if(cat==='accounts'&&item.type==='CORP')Object.entries({useCDA:true,integratedCorporate:false,businessSmallRate:12.2,businessGeneralRate:26.5,capitalReturnShare:50,realizationRate:25}).forEach(([key,value])=>item[key]??=value);
     if(cat==='dbPensions')item.survivorPercent??=60;
-    const wrapper=document.createElement('div');wrapper.className='setting-record';const row=document.createElement('div');row.className='item-row core-fields';const more=document.createElement('div');more.className='item-row advanced-fields';
-    spec.fields.filter(f=>cat!=='incomes'||personFieldVisible(f.key)).filter(f=>!f.accountTypes||f.accountTypes.includes(item.type)).forEach(f=>{
+    const wrapper=document.createElement('div');wrapper.className='setting-record';
+    if(cat==='incomes'&&['accounts','plan-settings'].includes(page)){const title=document.createElement('h3');title.textContent=item.name;wrapper.append(title);}const row=document.createElement('div');row.className='item-row core-fields';const more=document.createElement('div');more.className='item-row advanced-fields';
+    (cat==='dbPensions'?[]:spec.fields).filter(f=>cat!=='incomes'||personFieldVisible(f.key)).filter(f=>!f.accountTypes||f.accountTypes.includes(item.type)).forEach(f=>{
       if(f.key==='cppStartAge'&&item.cppPlan==='QPP')f={...f,options:Array.from({length:13},(_,k)=>60+k)};
       const node=field(f,item[f.key],v=>{
         if(cat==='incomes'&&f.key==='name'){const old=item.name;['accounts','dbPensions'].forEach(key=>config[key].forEach(a=>{if(a.owner===old)a.owner=v;}));}
         item[f.key]=v;if(f.key==='type'||f.key==='cppPlan')render();
       });node.dataset.setting=f.key;(core[cat].includes(f.key)?row:more).appendChild(node);
     });
-    if(cat==='dbPensions')more.appendChild(pensionTiers(item,render));
+    if(cat==='dbPensions')pensionFields(item,config.incomes.slice(0,config.assumptions.householdType==='single'?1:2),row,more);
     wrapper.append(row);if(more.children.length)wrapper.append(advanced(more));
     if(!spec.fixed){const del=document.createElement('button');del.className='btn ghost';del.textContent='Remove';del.onclick=()=>{config[cat].splice(i,1);render();};wrapper.append(del);}
     sec.append(wrapper);
@@ -402,17 +413,70 @@ function listSection(cat) {
 function newPension(owner) {
   return {name:'Workplace pension',owner,startAge:65,lifetime:0,bridge:0,bridgeCutoffAge:65,indexingRate:0,indexBeforeStart:false,followsRetirement:false,tiers:[]};
 }
-function pensionTiers(plan, refresh) {
+function pensionFields(plan, people, row, more) {
+  const groups={};
+  const startSpec=schema.dbPensions.fields.find(f=>f.key==='startAge');
+  const startAge=()=>plan.followsRetirement ? (people.find(p=>p.name===plan.owner)||people[0]).targetRetireAge : plan.startAge;
+  const estimates=()=>[...(plan.tiers||[])].sort((a,b)=>a.startAge-b.startAge);
+  const amounts=()=>plan.tiers?.length ? E.pensionEstimate(estimates(),+startAge()) : plan;
+  function sync() {
+    const tiers=estimates(),age=startAge(),linked=plan.followsRetirement;
+    const spec={...startSpec,hint:linked?'Payments start at the member’s retirement age. Turn off “Start when member retires” in Advanced Options to choose a different age.':tiers.length?'Choose an age estimate from your pension statement. The monthly amounts update together.':startSpec.hint};
+    if(tiers.length)Object.assign(spec,{type:'select',options:[...new Set(tiers.map(t=>+t.startAge).concat(+age))].sort((a,b)=>a-b)});
+    const group=field(spec,age,v=>{plan.startAge=+v;Object.assign(plan,{lifetime:amounts().lifetime,bridge:amounts().bridge});sync();});
+    group.dataset.setting='startAge';
+    const control=group.querySelector('input,select');control.disabled=!!linked;
+    if(tiers.length)Array.from(control.options).forEach(option=>{
+      const amount=E.pensionEstimate(tiers,+option.value);
+      const estimated=tiers.some(t=>+t.startAge===+option.value)?'':' (estimated)';
+      option.textContent=`Age ${option.value}${estimated} — ${money(amount.lifetime)}/mo`;
+    });
+    const focused=groups.startAge.contains(document.activeElement);
+    groups.startAge.replaceWith(group);groups.startAge=group;if(focused)control.focus();
+    ['lifetime','bridge'].forEach(key=>{
+      const input=groups[key].querySelector('input');input.readOnly=tiers.length>0;input.value=amounts()[key];
+      groups[key].querySelector('.inline-help').textContent=tiers.length?'Calculated for the start age above. Edit your statement amounts under Pension estimates in Advanced Options.':schema.dbPensions.fields.find(f=>f.key===key).hint||SettingHelp.text[key];
+    });
+  }
+  function money(value){return Number(value||0).toLocaleString('en-CA',{style:'currency',currency:'CAD',maximumFractionDigits:2});}
+  schema.dbPensions.fields.forEach(f=>{
+    if(f.type==='owner')f={...f,type:'select',options:people.map(p=>p.name)};
+    const group=field(f,plan[f.key],v=>{plan[f.key]=v;if(['owner','followsRetirement'].includes(f.key))sync();});
+    group.dataset.setting=f.key;groups[f.key]=group;
+    (['name','owner','startAge','lifetime'].includes(f.key)?row:more).append(group);
+  });
+  more.append(pensionTiers(plan,()=>{
+    if(plan.tiers?.length){const amount=amounts();plan.lifetime=amount.lifetime;plan.bridge=amount.bridge;}
+    sync();
+  }));
+  sync();
+}
+function pensionTiers(plan, changed) {
   const section=document.createElement('details');section.style.width='100%';
+  section.className='pension-estimates';
   section.open=(plan.tiers || []).length > 0;
-  const summary=document.createElement('summary');summary.textContent='Pension estimates at different ages ('+(plan.tiers || []).length+')';section.appendChild(summary);
-  const note=document.createElement('p');note.textContent='Optional: copy estimates from your pension statement. These override the lifetime and bridge amounts above. Between ages, amounts are interpolated; outside the entered range, the nearest estimate is used. Link the pension to retirement to use these in the retirement planner.';section.appendChild(note);
+  const summary=document.createElement('summary');section.appendChild(summary);
+  const note=document.createElement('p');note.textContent='Copy the ages and monthly amounts from your pension statement, then choose one in the Start age dropdown. If payments follow retirement, the calculator estimates amounts between these ages and uses the nearest estimate outside this range.';section.appendChild(note);
+  const rows=document.createElement('div');section.append(rows);
+  function drawRows(){
+  rows.replaceChildren();summary.textContent='Pension estimates at different ages ('+(plan.tiers||[]).length+')';
   (plan.tiers || []).forEach((tier,i)=>{
     const row=document.createElement('div');row.className='item-row';
-    ['startAge','lifetime','bridge'].forEach(key=>row.appendChild(field(schema.dbPensions.fields.find(f=>f.key===key),tier[key],v=>tier[key]=v)));
-    const remove=document.createElement('button');remove.className='btn danger';remove.textContent='Remove estimate';remove.onclick=()=>{plan.tiers.splice(i,1);refresh();};row.appendChild(remove);section.appendChild(row);
+    ['startAge','lifetime','bridge'].forEach(key=>row.appendChild(field(schema.dbPensions.fields.find(f=>f.key===key),tier[key],v=>{
+      const selected=+plan.startAge===+tier.startAge;tier[key]=v;
+      if(key==='startAge'&&selected)plan.startAge=+v;
+      changed();
+    })));
+    const remove=document.createElement('button');remove.className='btn danger';remove.textContent='Remove estimate';remove.onclick=()=>{
+      changed();plan.tiers.splice(i,1);changed();drawRows();
+    };row.appendChild(remove);rows.appendChild(row);
   });
-  const add=document.createElement('button');add.className='btn ghost';add.textContent='Add age estimate';add.onclick=()=>{(plan.tiers ||= []).push({startAge:65,lifetime:0,bridge:0});refresh();};section.appendChild(add);
+  }
+  drawRows();
+  const add=document.createElement('button');add.className='btn ghost';add.textContent='Add age estimate';add.onclick=()=>{
+    const tiers=plan.tiers||=[];let age=+plan.startAge||65;while(tiers.some(t=>+t.startAge===age))age++;
+    tiers.push({startAge:age,lifetime:plan.lifetime||0,bridge:plan.bridge||0});changed();drawRows();section.open=true;
+  };section.appendChild(add);
   return section;
 }
 
@@ -444,11 +508,14 @@ async function loadBackups() {
 }
 
 async function save() {
-  delete config.assumptions.withdrawalPlan;
-  const res = await AppStorage.fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(config)});
-  const body = await res.json();
-  if (body.success) { config = body.config; render(); loadBackups(); E.simulate(config); toast('Changes saved and projection updated'); }
-  else toast(body.error || 'Save failed', true);
+  const button=el('save-settings');button.disabled=true;
+  try{
+    delete config.assumptions.withdrawalPlan;
+    const saved=await AppStorage.save(config);
+    config=saved;settingsDirty=false;render();loadBackups();
+    el('settings-save-status').textContent='All changes saved';toast('Changes saved and projection updated');
+  }catch(error){el('settings-save-status').textContent='Not saved: '+error.message;toast(error.message,true);}
+  finally{button.disabled=false;}
 }
 
 function exportConfig() {
@@ -482,6 +549,10 @@ async function backupNow() {
 
 el('setup-wizard').addEventListener('cancel',event=>{event.preventDefault();closeWizard();});
 configureSettingsSchema();
-AppStorage.bindState(()=>config,c=>{config=E.normalizeConfig(c);config.assumptions.spendingMode='target';render();});
-AppStorage.subscribe(c=>{config=E.normalizeConfig(c);config.assumptions.spendingMode='target';render();});
+function receiveSettings(c){config=E.normalizeConfig(c);config.assumptions.spendingMode='target';settingsDirty=false;el('settings-save-status').textContent='All changes saved';render();}
+AppStorage.bindState(()=>config,receiveSettings);
+AppStorage.subscribe(c=>{if(settingsDirty){el('settings-save-status').textContent='The saved plan changed in another window. Your unsaved edits are kept here.';return;}receiveSettings(c);});
+el('editor').addEventListener('input',markSettingsDirty);
+el('editor').addEventListener('change',markSettingsDirty);
+el('editor').addEventListener('click',event=>{if(event.target.closest('button')&&/^(Add|Remove|Use these earnings)/.test(event.target.textContent))markSettingsDirty();});
 init().catch(error=>toast(error.message,true));

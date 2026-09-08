@@ -2,9 +2,16 @@
 
 const E = window.RetireEngine;
 let config = null, sim = null, charts = {}, saveTimer = null, scenarioSims = {}, wizardOffered = false;
+let inputTimer=null;
+const INPUT_PAUSE_MS=650;
 const isSingle = () => config?.assumptions.householdType === 'single';
 const agesText = r => r.ages.slice(0,isSingle()?1:2).join(' / ');
-function openSetupWizard() { clearTimeout(saveTimer); el('setup-frame').src='./config.html?wizard=1'; el('setup-host').showModal(); }
+async function openSetupWizard() {
+  try{
+    if(inputTimer!==null||saveTimer!==null){onStateChange();clearTimeout(saveTimer);saveTimer=null;await AppStorage.save(config);}
+    el('setup-frame').src='./config.html?wizard=1';el('setup-host').showModal();
+  }catch(error){el('banner-text').textContent='Could not save your changes before setup: '+error.message;}
+}
 window.addEventListener('message',event=>{if(event.origin===location.origin && event.source===el('setup-frame').contentWindow && event.data?.type==='wizard-closed')el('setup-host').close();});
 
 const CAD = new Intl.NumberFormat('en-CA', {style:'currency', currency:'CAD', maximumFractionDigits:0});
@@ -34,14 +41,20 @@ fillSelect(el('p1-oas'), 65, 70); fillSelect(el('p2-oas'), 65, 70);
   .forEach(id => el(id).addEventListener('change', onStateChange));
 el('toggle-lines').addEventListener('change', () => charts.traj && charts.traj.update());
 el('real-toggle').addEventListener('change', () => run());
-el('p1-slider').addEventListener('input', e => { el('p1-age-val').textContent = e.target.value; plannerFixed=0; onStateChange(); });
-el('p2-slider').addEventListener('input', e => { el('p2-age-val').textContent = e.target.value; plannerFixed=1; onStateChange(); });
-el('spend-slider').addEventListener('input', e => { el('m-goal').value = e.target.value; el('spend-val').textContent = fmt(e.target.value); onStateChange(); });
+el('p1-slider').addEventListener('input', e => { el('p1-age-val').textContent = e.target.value; queueInputChange(); });
+el('p2-slider').addEventListener('input', e => { el('p2-age-val').textContent = e.target.value; queueInputChange(); });
+el('spend-slider').addEventListener('input', e => { el('m-goal').value = e.target.value; el('spend-val').textContent = fmt(e.target.value); queueInputChange(); });
 el('m-goal').addEventListener('change', e => { const v = Math.max(0, +e.target.value || 0); e.target.value = v; el('spend-slider').value = v; el('spend-val').textContent = fmt(v); onStateChange(); });
 
-function receiveConfig(c) { config = E.normalizeConfig(c); config.assumptions.spendingMode='target'; syncControls(); run(); if(config.onboardingComplete===false && !wizardOffered){wizardOffered=true;openSetupWizard();} }
-AppStorage.subscribe(c=>{window.dispatchEvent(new Event('planinputschange'));receiveConfig(c);});
-AppStorage.bindState(()=>config,receiveConfig);
+function receiveConfig(c) {
+  const incoming=E.normalizeConfig(c);incoming.assumptions.spendingMode='target';
+  if(config&&JSON.stringify(incoming)===JSON.stringify(config))return;
+  clearTimeout(inputTimer);inputTimer=null;window.dispatchEvent(new Event('planinputschange'));
+  config=incoming;syncControls();run();
+  if(config.onboardingComplete===false&&!wizardOffered){wizardOffered=true;openSetupWizard();}
+}
+AppStorage.subscribe(c=>{if(inputTimer===null&&saveTimer===null)receiveConfig(c);});
+AppStorage.bindState(()=>config,c=>{clearTimeout(saveTimer);saveTimer=null;receiveConfig(c);});
 AppStorage.fetch('/api/config').then(r=>{if(!r.ok)throw new Error('Could not load configuration');return r.json();}).then(c=>{if(!config)receiveConfig(c);}).catch(err=>{el('banner-text').textContent=err.message;});
 
 function syncControls() {
@@ -81,8 +94,7 @@ function syncControls() {
   ['ch-p2-tax','ch-p2-mr'].forEach((id,i) => el(id).textContent = P[1].name + (i ? ' marginal' : ' taxable'));
 }
 
-function onStateChange() {
-  window.dispatchEvent(new Event('planinputschange'));
+function readControls() {
   if (!config) return;
   delete config.assumptions.withdrawalPlan;
   config.incomes[0].targetRetireAge = +el('p1-slider').value;
@@ -97,53 +109,32 @@ function onStateChange() {
   const newGoal=Math.max(0,+el('m-goal').value||0);
   config.assumptions.spendingMode='target';
   config.assumptions.desiredMonthlyIncome = newGoal;
+}
+function queueInputChange(){
+  if(!config)return;
+  clearTimeout(inputTimer);clearTimeout(saveTimer);saveTimer=null;
+  window.dispatchEvent(new Event('planinputschange'));
+  readControls();
+  inputTimer=setTimeout(onStateChange,INPUT_PAUSE_MS);
+}
+function onStateChange() {
+  clearTimeout(inputTimer);inputTimer=null;
+  window.dispatchEvent(new Event('planinputschange'));
+  if(!config)return;
+  readControls();
   run();
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    AppStorage.fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(config)});
+  saveTimer = setTimeout(async () => {
+    saveTimer=null;
+    try{
+      const response=await AppStorage.fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(config)});
+      const body=await response.json();if(!response.ok)throw new Error(body.error||'Could not save changes.');
+    }catch(error){el('banner-text').textContent='Changes could not be saved: '+error.message;el('status-banner').className='alert-banner danger';}
   }, 450);
 }
 
-let plannerFixed=null, plannerWorker=null, plannerTimer=null, plannerId=0, plannerResult=null;
-function schedulePlanner() {
-  clearTimeout(plannerTimer); if(plannerWorker) {plannerWorker.terminate();plannerWorker=null;}
-  const id=++plannerId;plannerResult=null;el('planner-apply').hidden=true;
-  if(isSingle()) plannerFixed=null;
-  el('planner-both').hidden=isSingle();
-  el('planner-status').textContent='Checking retirement ages for '+fmt(config.assumptions.desiredMonthlyIncome)+'/month?';
-  el('planner-context').textContent=plannerFixed===null ? 'Find the earliest year by which everyone can retire; among ties, minimize total years worked.' :
-    'Holding '+config.incomes[plannerFixed].name+' at age '+config.incomes[plannerFixed].targetRetireAge+'. Finding the other person?s earliest feasible retirement.';
-  plannerTimer=setTimeout(()=>{
-    try {
-      plannerWorker=AppWorkers.create('retirement');
-      plannerWorker.onmessage=event=>{
-        if(event.data.id!==plannerId||!plannerWorker)return;
-        const {result,error,tested,total}=event.data;
-        if(error){el('planner-status').textContent='Could not calculate retirement ages: '+error;plannerWorker.terminate();plannerWorker=null;return;}
-        if(!result){el('planner-status').textContent='Checking retirement ages? '+tested+' of '+total+' combinations tested.';return;}
-        plannerWorker.terminate();plannerWorker=null;plannerResult=result;
-        if(result.found) {
-          const count=isSingle()?1:2;
-          const people=config.incomes.slice(0,count).map((p,k)=>p.name+' can retire at '+result.ages[k]+' ('+result.years[k]+')');
-          el('planner-status').textContent='To fund '+fmt(result.goal)+'/month: '+people.join('; ')+'.';
-          el('planner-apply').hidden=result.ages.slice(0,count).every((age,k)=>age===config.incomes[k].targetRetireAge);
-        } else {
-          el('planner-status').textContent='No funded retirement combination found through age '+result.maxAge+' with these settings. '+(plannerFixed!==null ? 'Try ?Find ages for both?, ' : 'Try ')+ 'a lower spending goal, more savings, or revised pension estimates.';
-        }
-      };
-      plannerWorker.onerror=()=>{if(id!==plannerId||!plannerWorker)return;el('planner-status').textContent='Retirement search failed. Reload the page to try again.';plannerWorker.terminate();plannerWorker=null;};
-      plannerWorker.postMessage({id,config:structuredClone(config),fixedPerson:plannerFixed});
-    } catch(error) {el('planner-status').textContent='Retirement search is unavailable in this browser: '+error.message;}
-  },300);
-}
-el('planner-both').onclick=()=>{plannerFixed=null;schedulePlanner();};
-el('planner-apply').onclick=()=>{
-  if(!plannerResult?.found)return;
-  plannerResult.ages.slice(0,isSingle()?1:2).forEach((age,k)=>config.incomes[k].targetRetireAge=age);
-  syncControls();onStateChange();
-};
 const dashboardHelp={
-  'real-toggle':'Show projected money in today?s purchasing power. Turn off to show the actual dollar amounts expected in each future year.',
+  'real-toggle':'Show projected money in today\'s purchasing power. Turn off to show the actual dollar amounts expected in each future year.',
   'm-goal':SettingHelp.text.desiredMonthlyIncome,
   'p1-slider':SettingHelp.text.targetRetireAge,'p2-slider':SettingHelp.text.targetRetireAge,
   'p1-cpp':SettingHelp.text.cppStartAge,'p2-cpp':SettingHelp.text.cppStartAge,
@@ -194,7 +185,6 @@ function upsert(key, canvasId, cfg) {
 /* ------------------------------------------------------------------ run */
 function run() {
   if (!config) return;
-  schedulePlanner();
   sim = E.simulate(config);
   const years = sim.years;
   const labels = years.map(r => r.year);
@@ -573,3 +563,9 @@ async function backupNow() {
   alert(r.ok ? 'Backed up to ' + r.file : 'Backup failed');
 }
 loadScenarios();
+
+// Keep the overview focused on its controls and projection.
+if(document.body.dataset.page==='overview'){
+  const metrics=document.querySelector('body > .metrics-grid');
+  ['p1-slider','p2-slider'].forEach(id=>{const control=el(id).closest('.ctl');control.classList.add('metric-card');metrics.append(control);});
+}else document.querySelector('h1').textContent='Plan details';

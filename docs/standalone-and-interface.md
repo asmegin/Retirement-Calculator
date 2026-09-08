@@ -18,17 +18,20 @@ An unavailable API or failed Socket.IO connection selects local storage and disp
 
 | Page | Contents |
 | --- | --- |
-| Overview | Monthly after-tax spending, retirement ages, projection graph, and a native retirement/withdrawal action plan. |
-| Detailed Overview | Net worth, cash flow, contribution targets, yearly ledger, timeline, and risk analysis. |
-| Household | People, investment accounts, province, spending, and optional estate/survivor settings. |
-| Employment | Salary, dividends, RRSP goals, savings choices, and childcare. |
+| Overview | Monthly after-tax spending, retirement ages and a projection graph. |
+| Action plan (under Plan) | Current-status and Monte Carlo checks, close retirement-date searches, net-worth and tax searches, with explanations and explicit Apply controls. |
+| Plan details | Net worth, cash flow, contribution targets, yearly ledger, timeline, and risk analysis. |
+| Household | Household type, adults and children, with optional childcare expenses. |
+| Accounts | Investment accounts, contribution room, FHSA history and home buyer repayments. |
+| Plan settings | Province, retirement ages, spending assumptions and optional estate/survivor settings. |
+| Employment | Salary, dividends, RRSP goals and savings choices. |
 | Properties | Property and loan balances; Advanced Options contain payments, sales, tax costs, CCA, prepayments, and Smith-style investment borrowing. |
-| Pensions | Government and optional workplace pensions; optional earnings-history calculations. |
+| Pensions | Government and optional workplace pensions; optional earnings-history calculations. Workplace plans with age estimates show a start-age dropdown and matching read-only monthly amounts. Edit statement estimates in Advanced Options. Linking payments to retirement uses the member’s retirement age; existing ages between estimates are labelled as estimated. |
 | Compare scenarios | Separate alternatives with net-worth, tax, benefit and shortfall deltas. |
 | Withdrawal strategy | Bounded withdrawal search, apply controls and an exportable annual schedule. |
 | App Config | Appearance, HTTP Auth status/instructions, storage mode and backups. |
 
-Every navigation link opens a dedicated HTML page; the server also accepts the corresponding extensionless route. There are no section-anchor navigation links. `config.html` remains a household/setup entry point; `planning.html` remains a scenario entry point for existing bookmarks.
+Every navigation link opens a dedicated HTML page; the server also accepts the corresponding extensionless route. There are no section-anchor navigation links. Overview and Plan details are direct links; Accounts is a Configuration sub-menu and Plan settings is under Plan. Unsaved configuration edits are identified beside Save changes and are preserved when another window sends a plan update. `config.html` remains a household/setup entry point; `planning.html` remains a scenario entry point for existing bookmarks.
 
 Account and property forms initially show names, ownership, type, and balances/value. Advanced Options use native keyboard-accessible disclosure controls. Help is short inline text associated with its control through `aria-describedby`. FHSA opening-year and room fields appear only when an FHSA account exists. Pensions have compact start-age inputs. Category spending controls were removed: the UI uses the main monthly goal and optional spending phases. Historical category fields can remain in JSON but are not selected by the UI.
 
@@ -36,7 +39,11 @@ Account and property forms initially show names, ownership, type, and balances/v
 
 **Goal reached estimate per year** defaults to 85%. The engine first calculates the full RRSP contribution required to reach the chosen tax rate. It then models the selected percentage as the actual contribution, uses that amount for the deduction and room consumption, and calculates any reinvested refund from that contribution. Fixed payroll deposits and HBP repayment budgets remain separate. A 0% estimate gives no extra goal contribution; 100% models the full target.
 
-The Overview action plan calls `solveRetirementAges` and shows the funded candidate's retirement ages/years, benefit commencement ages, projected deposits and first retirement-year withdrawals. Moving one age fixes that person while the other is searched. The net-worth action calls `optimizeWithdrawals` with the estate objective and displays actual annual account withdrawal amounts, tax, ending-wealth change, and any remaining funding shortfall. Results are applied only through the corresponding buttons; input changes cancel stale searches.
+Overview slider labels update immediately; calculation waits for a 650 ms pause. Identical server save echoes do not rebuild charts. Retirement searches now run on demand in **Plan ? Action plan**, separately from the projection graph.
+
+**Check current status** tests spending coverage, a difficult first decade, and 100?2,000 Monte Carlo paths (using the configured run count within those limits). It explains the results without changing the plan. **Find earliest retirement** calls `solveRetirementAges`, defaulting to retirement dates within three calendar years. Users can adjust the gap or keep one person's age fixed. The search minimizes the year by which both have retired, then favours closer dates. Past retirement dates remain fixed. Applying ages clears any prior withdrawal schedule so it can be recalculated.
+
+**Find steps to increase net worth** and **Find steps to reduce taxes** call `optimizeWithdrawals` with separate estate/tax objectives. Results show wealth and lifetime-tax changes, funding status, and an annual withdrawal schedule when an improvement is found. Only **Apply** saves a proposal; checks, cancellation and previews do not save financial changes. All four tasks use cancellable workers in Docker and standalone mode. Changes to the saved plan invalidate old results, and Apply checks the saved snapshot again before writing.
 
 These are annual projections under the entered assumptions. The bounded withdrawal search evaluates complete schedules but does not prove a globally optimal dollar-by-dollar strategy. CPP/QPP history mode estimates base and enhanced benefits; missing records, annual-to-monthly allocation, future ceilings, disability enhancement provisions, post-retirement benefits, credit splitting and special QPP provisions limit exactness. Corporate modeling uses editable effective rates and simplified GRIP/refund timing, rather than preparing a T2. GIS/GAINS are annual estimates; refundable provincial benefits outside Ontario GAINS are not comprehensive.
 
