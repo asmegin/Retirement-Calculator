@@ -52,7 +52,7 @@ body[data-page=overview]>.dashboard-controls{display:none}body[data-page=overvie
 .delta-positive{color:#16733c;font-weight:700}.delta-negative{color:#b42318;font-weight:700}.delta-neutral{color:var(--muted)}
 [data-theme=dark] .delta-positive{color:#86efac}[data-theme=dark] .delta-negative{color:#fca5a5}
 .comparison-tool{margin:20px 0}.comparison-tool p{line-height:1.7}.comparison-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:16px 0}.comparison-detail{padding:18px;margin-top:16px;background:var(--panel2);border-radius:8px}.comparison-tool table{width:100%;border-collapse:collapse}.comparison-tool th,.comparison-tool td{padding:12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}.comparison-tool label{display:block}.comparison-tool input[type=checkbox]{width:auto;margin-right:8px}.comparison-tool .data-scroll{overflow:auto;max-height:520px}.comparison-tool{min-width:0}.comparison-cards h3{font-size:16px}
-.overview-withdrawals{margin-top:12px;white-space:normal!important;max-width:100%;font-size:12px!important}
+@media screen{.overview-withdrawals{display:inline-flex;margin-top:12px;white-space:normal!important;max-width:100%;font-size:12px!important}}
 
 /* Discreet display: originals are excluded from display/accessibility, never changed in the plan. */
 .private-mask,.private-input-mask{display:none}
