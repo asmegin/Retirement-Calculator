@@ -16,7 +16,7 @@ table{border-collapse:collapse;text-align:left;width:100%}td,th{padding:12px;bor
 <p id="action-context" class="action-context">Loading your saved plan…</p>
 <div class="action-choices">
 <section class="card action-choice"><h2>Understand where you stand</h2><p>Check whether your spending is funded, try a difficult first decade, and test many possible market outcomes with Monte Carlo.</p><button class="btn" data-action="status" disabled>Check current status</button></section>
-<section class="card action-choice"><h2 id="retirement-heading">Retire sooner, together</h2><p id="retirement-description">Find the earliest funded retirement dates, keeping you within three calendar years of each other.</p><button class="btn" data-action="retirement" disabled>Find earliest retirement</button></section>
+<section class="card action-choice"><h2 id="retirement-heading">Retire sooner, together</h2><p id="retirement-description">Find the earliest funded retirement dates, keeping you within three calendar years of each other.</p><label><input type="checkbox" id="retirement-sell-rentals" aria-describedby="rental-retirement-help"> Consider selling rental properties</label><small id="rental-retirement-help" class="inline-help">Compare keeping rentals and selling in each future year. With multiple rentals, the search tests selling them all in the same year. At the earliest funded retirement dates, choose the sale timing with the highest ending net worth.</small><button class="btn" data-action="retirement" disabled>Find earliest retirement</button></section>
 <section class="card action-choice"><h2>Keep more for later</h2><p>Compare ways to withdraw from your accounts and look for a higher final net worth at your current retirement ages.</p><button class="btn" data-action="estate" disabled>Find steps to increase net worth</button></section>
 <section class="card action-choice"><h2>Pay less tax over time</h2><p>Look for a withdrawal schedule that reduces total projected tax while protecting your spending and final net worth.</p><button class="btn" data-action="tax" disabled>Find steps to reduce taxes</button></section>
 </div>
@@ -32,4 +32,4 @@ table{border-collapse:collapse;text-align:left;width:100%}td,th{padding:12px;bor
 <details id="action-schedule" hidden><summary>Review year-by-year withdrawals</summary><div class="data-scroll" id="action-schedule-table"></div></details>
 <div class="row-actions"><button class="btn" id="apply-action" hidden>Apply changes</button><a class="btn ghost" href="./plan-settings.html">Adjust plan settings</a></div>
 </section>
-</main><script src="./action-plan.js"></script></body></html>
+</main><script src="./comparison-ui.js"></script><script src="./action-plan.js"></script></body></html>

@@ -4,6 +4,50 @@ import json,os,socket,subprocess,tempfile,time,urllib.request
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
 NODE=os.environ.get('NODE_EXE','node')
+def check_comparisons(page,base):
+    page.goto(base+'/properties.html');page.wait_for_selector('[data-category=realEstate]')
+    original=page.evaluate('PlanState.get()')
+    page.evaluate('''async()=>{const c=structuredClone(PlanState.get());const year=new Date().getFullYear();
+      c.incomes.forEach(p=>Object.assign(p,{birthYear:year-65,targetRetireAge:67,deathAge:70}));
+      c.assumptions.targetDeathAge=70;c.assumptions.desiredMonthlyIncome=2000;
+      c.realEstate=[{name:'Test rental',type:'rental',value:500000,appreciation:2,acb:300000,buildingAcb:250000,buildingSalePercent:80,uccPool:200000,ccaEnabled:true,grossRentMonthly:2000,mortgage:100000,interestRate:5,paymentMonthly:1000,sellingCostPct:5,saleYear:0}];
+      await AppStorage.save(c);}''')
+    saved=page.evaluate('PlanState.get()')
+    tool=page.locator('[data-comparison=rental]')
+    tool.get_by_role('button',name='Calculate best sale years',exact=True).click()
+    tool.locator('tbody tr').first.wait_for(timeout=60000)
+    assert tool.locator('tbody tr').count()==15
+    assert tool.locator('.delta-positive,.delta-negative').count()>0
+    tool.locator('tbody tr').nth(2).get_by_role('button',name='Review',exact=True).click()
+    assert 'CCA recapture (100% taxable): $50,000' in tool.locator('.comparison-detail').inner_text()
+    tool.get_by_role('button',name='Use this sale and CCA setting',exact=True).click()
+    assert page.evaluate('config.realEstate[0].saleYear')==time.localtime().tm_year
+    assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')==saved
+    page.get_by_role('button',name='Save changes',exact=True).click()
+    page.wait_for_function('document.getElementById("settings-save-status").textContent==="All changes saved"')
+    page.reload();page.wait_for_selector('[data-comparison=rental]')
+    assert page.evaluate('config.realEstate[0].saleYear')==time.localtime().tm_year
+    page.evaluate('c=>AppStorage.save(c)',saved)
+    tool.get_by_role('button',name='Calculate best sale years',exact=True).click();tool.locator('tbody tr').first.wait_for(timeout=60000)
+    page.set_viewport_size({'width':390,'height':844})
+    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+    page.screenshot(path=str(Path(tempfile.gettempdir())/'retirement-rental-comparison-mobile.png'),full_page=True)
+    page.set_viewport_size({'width':1512,'height':1000})
+    page.goto(base+'/withdrawals.html?compare=1');tool=page.locator('[data-comparison=withdrawals]');tool.locator('tbody tr').first.wait_for(timeout=60000)
+    assert tool.locator('tbody tr').count()==6
+    assert 'Most monthly spending' in tool.inner_text()
+    tool.locator('tbody tr').nth(2).get_by_role('button',name='Review',exact=True).click()
+    tool.get_by_role('button',name='Use this withdrawal order',exact=True).click()
+    assert page.evaluate('config.assumptions.withdrawalStrategy')=='rrsp-first'
+    assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')==saved
+    page.locator('#save-plan').click();page.wait_for_function('document.getElementById("save-status").textContent==="Plan saved."')
+    page.goto(base+'/action-plan.html');page.wait_for_selector('[data-action=retirement]:enabled')
+    page.locator('#retirement-sell-rentals').check();page.locator('[data-action=retirement]').click()
+    page.wait_for_selector('#action-results:not([hidden])',timeout=60000)
+    assert 'Test rental:' in page.locator('#action-steps').inner_text()
+    page.locator('#apply-action').click();page.wait_for_function('document.getElementById("action-status").textContent.startsWith("Changes applied")')
+    page.evaluate('c=>AppStorage.save(c)',original)
+
 def check_action_plan(page,url):
     page.goto(url);page.wait_for_selector('[data-action=status]:enabled')
     original=page.evaluate('PlanState.get()')
@@ -15,6 +59,9 @@ def check_action_plan(page,url):
         page.locator(f'[data-action={kind}]').click()
         page.wait_for_selector('#action-results:not([hidden])',timeout=60000)
         assert page.locator('#action-steps li').count()>0
+        if kind in ['tax','estate']:
+            assert page.locator('#action-metrics .delta-positive,#action-metrics .delta-negative,#action-metrics .delta-neutral').count()==3
+            assert 'Current' in page.locator('#action-metrics').inner_text() and 'Proposed' in page.locator('#action-metrics').inner_text()
         assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')==saved
         if kind=='status':
             assert '100 paths' in page.locator('#action-summary').inner_text()
@@ -227,6 +274,9 @@ with tempfile.TemporaryDirectory(prefix='retirement-browser-data-') as data:
             assert local.evaluate('document.documentElement.scrollWidth<=innerWidth'),local.evaluate('[...document.querySelectorAll("body *")].filter(e=>e.getBoundingClientRect().right>innerWidth+1&&getComputedStyle(e).display!=="none").map(e=>[e.tagName,e.id,e.className,e.getBoundingClientRect().width]).slice(0,25)')
             local.screenshot(path=str(Path(tempfile.gettempdir())/'retirement-overview-mobile.png'))
             assert not errors,errors
-            browser.close();print('PASS: Docker real-time sync, file:// offline storage/navigation/workers, import/export, dedicated pages, advanced disclosure, FHSA conditional fields, RRSP goal, action plan, themes and mobile layout.')
+            check_comparisons(page,base)
+            check_comparisons(local,(ROOT/'public').as_uri())
+            assert not errors,errors
+            browser.close();print('PASS: Docker real-time sync, file:// offline storage/navigation/workers, import/export, dedicated pages, advanced disclosure, FHSA conditional fields, RRSP goal, action plan, rental sale and withdrawal comparisons, themes and mobile layout.')
     finally:
         server.terminate();server.wait(timeout=10)

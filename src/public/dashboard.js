@@ -524,7 +524,7 @@ async function loadScenarios() {
   list.forEach(s => {
     const div = document.createElement('div');
     div.className = 'scenario-row';
-    div.innerHTML = `<div><strong>${s.name}</strong><div style="font-size:.72rem;color:var(--muted)">saved ${new Date(s.savedAt).toLocaleString('en-CA')}</div></div>`;
+    const info=document.createElement('div'),title=document.createElement('strong'),date=document.createElement('div');title.textContent=s.name;date.className='small-note';date.textContent=s.savedAt?'saved '+new Date(s.savedAt).toLocaleString('en-CA'):'Saved scenario';info.append(title,date);div.append(info);
     const acts = document.createElement('div');
     acts.style.display = 'flex'; acts.style.gap = '.5rem';
     const cmp = document.createElement('button'); cmp.className='btn ghost'; cmp.textContent='Compare';

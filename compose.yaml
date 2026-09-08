@@ -1,0 +1,15 @@
+services:
+  retirement-calculator:
+    image: ghcr.io/asmegin/retirement-calculator:${APP_VERSION:-1.0.0}
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3333}:3333"
+    volumes:
+      - ./data:/app/data
+    environment:
+      PORT: "3333"
+      BIND: "0.0.0.0"
+      DATA_DIR: /app/data
+      BASIC_AUTH_ENABLED: "${BASIC_AUTH_ENABLED:-false}"
+      BASIC_AUTH_USER: "${BASIC_AUTH_USER:-}"
+      BASIC_AUTH_PASS: "${BASIC_AUTH_PASS:-}"

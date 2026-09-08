@@ -75,3 +75,81 @@ test('Smith investment portfolio does not replace an existing taxable account re
   c.realEstate=[{name:'Home',type:'principal',value:300000,mortgage:100000,interestRate:0,paymentMonthly:1000,smithEnabled:true,smithLimit:20000,smithGrowthRate:0,smithOwner:'P0'}];
   const r=simulate(c).years[0];near(r.accounts.find(a=>a.name==='Existing savings').growth,10000);assert.ok(r.accounts.filter(a=>a.type==='TAXABLE').length>=2);
 });
+
+test('start-of-year sale repays opening mortgage without free principal or rental cash',()=>{
+  const c=fixture();c.realEstate=[{name:'Rental',type:'rental',value:500000,appreciation:0,acb:500000,buildingAcb:500000,uccPool:500000,mortgage:200000,interestRate:5,paymentMonthly:2000,saleYear:2026,sellingCostPct:0,grossRentMonthly:3000}];
+  c.accounts=[{name:'Savings',owner:'P0',type:'TAXABLE',balance:0,growthRate:0}];
+  const r=simulate(c).years[0];near(r.saleEvents[0].mortgageDischarged,200000);near(r.saleProceeds,300000);near(r.rentCash,0);near(r.netWorth,300000);
+});
+test('underwater rental sale charges the cash deficit instead of erasing debt',()=>{
+  const c=fixture();c.accounts=[{name:'Cash',owner:'P0',type:'TFSA',balance:100000,growthRate:0}];
+  c.realEstate=[{name:'Rental',type:'rental',value:200000,appreciation:0,acb:200000,mortgage:250000,interestRate:5,paymentMonthly:2000,saleYear:2026,sellingCostPct:0}];
+  const r=simulate(c).years[0];near(r.saleProceeds,-50000);near(r.portfolio,50000,1);near(r.netWorth,50000,1);near(r.unfunded,0);
+});
+test('optimizer compares against and preserves an existing annual withdrawal schedule',()=>{
+  const c=fixture();c.assumptions.desiredMonthlyIncome=2000;c.assumptions.withdrawalPlan={2026:[30000,0],2027:[40000,0]};
+  c.accounts=[{name:'RRSP',owner:'P0',type:'RRSP',balance:400000,growthRate:0},{name:'TFSA',owner:'P0',type:'TFSA',balance:100000,growthRate:0}];
+  const original=JSON.stringify(c),baseline=simulate(c),r=E.optimizeWithdrawals(c,{startYear:2026,maxEvaluations:0});
+  near(r.baseline.lifetimeTax,baseline.lifetimeTax);assert.deepEqual(r.withdrawalPlan,c.assumptions.withdrawalPlan);near(r.taxSavings,0);assert.equal(JSON.stringify(c),original);
+});
+test('withdrawal comparison covers all orders, retains baseline schedule, and reports reproducible spending',()=>{
+  const c=fixture();c.assumptions.desiredMonthlyIncome=2000;c.assumptions.withdrawalPlan={2026:[30000,0]};
+  c.accounts=[{name:'RRSP',owner:'P0',type:'RRSP',balance:400000,growthRate:0},{name:'TFSA',owner:'P0',type:'TFSA',balance:100000,growthRate:0}];
+  const original=JSON.stringify(c),r=E.compareWithdrawalOrders(c,{startYear:2026});assert.equal(r.rows.length,6);near(r.rows[0].tax,simulate(c).lifetimeTax);assert.deepEqual(r.rows[0].plan,c.assumptions.withdrawalPlan);
+  assert.ok(r.bestSpending.monthlySpend>=r.rows[0].monthlySpend);assert.ok(r.bestTax.funded);assert.ok(r.bestEstate.funded);
+  const candidate=structuredClone(c);candidate.assumptions.withdrawalPlan=r.bestSpending.plan;candidate.assumptions.withdrawalStrategy=r.bestSpending.strategy;candidate.assumptions.desiredMonthlyIncome=r.bestSpending.monthlySpend;
+  assert.equal(simulate(candidate).depletedYear,null);assert.equal(JSON.stringify(c),original);
+});
+test('rental sale comparison tests every year, CCA alternatives and holding with terminal tax',()=>{
+  const c=fixture();c.accounts=[{name:'Cash',owner:'P0',type:'TFSA',balance:100000,growthRate:0}];
+  c.realEstate=[{name:'Rental',type:'rental',value:750000,appreciation:0,acb:500000,buildingAcb:500000,uccPool:420000,ccaEnabled:true,grossRentMonthly:2000,sellingCostPct:0}];
+  const original=JSON.stringify(c),r=E.compareRentalSales(c,{startYear:2026,propertyIndex:0,compareCCA:true});
+  assert.equal(r.rows.length,15);assert.equal(r.includesTerminalTax,true);assert.ok(r.rows[0].tax>0);assert.equal(r.bestTax.funded,true);
+  const now=r.rows.find(x=>x.label==='Sell 2026');near(now.sale.ccaRecapture,80000);near(now.sale.taxableGain,125000);assert.ok(now.saleIncomeTax>0);
+  const later=r.rows.find(x=>x.label==='Sell 2027'),noCCA=r.rows.find(x=>x.label==='Sell 2027; no future CCA');assert.ok(later.sale.ccaRecapture>noCCA.sale.ccaRecapture);near(noCCA.sale.ccaRecapture,80000);
+  assert.equal(JSON.stringify(c),original);assert.equal(c.assumptions.estate,undefined);
+});
+test('rental comparison respects per-property selection and rejects invalid tax inputs',()=>{
+  const c=fixture();c.realEstate=[{name:'Home',type:'principal',value:100000},{name:'Rental',type:'rental',value:200000,acb:100000,buildingAcb:80000,uccPool:70000}];
+  assert.throws(()=>E.compareRentalSales(c,{propertyIndex:0,startYear:2026}),/rental property/);
+  const r=E.compareRentalSales(c,{propertyIndex:1,startYear:2026});assert.equal(r.propertyIndex,1);assert.equal(r.propertyName,'Rental');
+  c.realEstate[1].uccPool=90000;assert.throws(()=>E.compareRentalSales(c,{propertyIndex:1,startYear:2026}),/UCC/);
+});
+test('selling rental enables earlier retirement and returned sale settings reproduce funding',()=>{
+  const c=fixture();c.incomes[0].targetRetireAge=67;c.assumptions.desiredMonthlyIncome=2000;
+  c.realEstate=[{name:'Rental',type:'rental',value:500000,appreciation:0,acb:500000,uccPool:500000,sellingCostPct:0}];
+  const original=JSON.stringify(c),hold=E.solveRetirementAges(c,{startYear:2026}),sell=E.solveRetirementAges(c,{startYear:2026,sellRentals:true});
+  assert.equal(hold.found,false);assert.equal(sell.found,true);assert.equal(sell.ages[0],65);assert.equal(sell.rentalSales[0].year,2026);assert.equal(JSON.stringify(c),original);
+  c.incomes[0].targetRetireAge=sell.ages[0];sell.rentalSales.forEach(s=>c.realEstate[s.index].saleYear=s.year);
+  assert.ok(simulate(c).years.every(y=>y.unfunded<=1));
+});
+test('terminal rental loss reduces final-year income tax and increases net estate',()=>{
+  const c=fixture();c.incomes[0].deathAge=65;c.assumptions.estate={enabled:true,spousalRollover:false,probateOverride:0};
+  c.incomes[0].cppBaseAt65=5000;c.realEstate=[{name:'Rental',type:'rental',value:350000,appreciation:0,acb:500000,buildingAcb:500000,uccPool:420000,ccaEnabled:false}];
+  c.assumptions.reinvestSurplus=false;
+  const r=simulate(c);near(r.estateEvents[0].terminalIncome,-70000);assert.ok(r.years[0].terminalTax<0);near(r.lifetimeTax,0);
+});
+
+test('zero-interest loan honours the entered monthly payment',()=>{
+  const s=E.buildSchedule({mortgage:100000,interestRate:0,paymentMonthly:1000},2026,2050);
+  near(s.byYear[2026].principal,12000);near(s.byYear[2026].endBalance,88000);near(s.byYear[2026].interest,0);assert.equal(s.actualPayoffYear,2034);
+});
+test('start-of-year property sale skips extra payments and new Smith advances',()=>{
+  const c=fixture();c.realEstate=[{name:'Home',type:'principal',value:500000,appreciation:0,mortgage:200000,paymentMonthly:2000,interestRate:5,saleYear:2026,sellingCostPct:0,extraPaymentAnnual:20000,smithEnabled:true}];
+  const r=simulate(c).years[0];near(r.extraDebtPayments,0);near(r.smithAdvance,0);near(r.saleEvents[0].mortgageDischarged,200000);near(r.saleProceeds,300000);
+});
+test('rental alternatives reproduce the cleared schedule that will be applied',()=>{
+  const c=fixture();c.assumptions.withdrawalPlan={2026:[200000,0]};c.accounts=[{name:'RRSP',owner:'P0',type:'RRSP',balance:300000,growthRate:0}];
+  c.realEstate=[{name:'Rental',type:'rental',value:500000,acb:300000,buildingAcb:300000,uccPool:250000}];
+  const result=E.compareRentalSales(c,{propertyIndex:0,startYear:2026}),sale=result.rows[2];
+  const candidate=E.normalizeConfig(c);candidate.assumptions.estate.enabled=true;delete candidate.assumptions.withdrawalPlan;candidate.realEstate[0].saleYear=sale.year;
+  near(sale.tax,simulate(candidate).lifetimeTax);near(sale.estate,simulate(candidate).finalNetWorthReal);
+});
+
+test('Monte Carlo does not count unfunded contributions before retirement as a successful plan',async()=>{
+  const c=fixture();c.incomes[0].birthYear=new Date().getFullYear()-65;c.incomes[0].targetRetireAge=66;
+  c.accounts=[{name:'Savings',owner:'P0',type:'TAXABLE',balance:0,growthRate:0,contribAmt:10000,contribFreq:'yearly'}];c.assumptions.mcVolatility=0;
+  const baseline=E.simulate(c);assert.equal(baseline.depletedYear,null);assert.ok(baseline.years[0].unfunded>1);
+  near(E.monteCarloSync(c,3,1),0);
+  const result=await new Promise(resolve=>E.monteCarloRun(c,3,1,null,resolve));near(result.successRate,0);assert.ok(result.results.every(r=>r.funded===false));
+});

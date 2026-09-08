@@ -97,7 +97,7 @@
 <p id="household-summary" style="color:var(--muted);font-size:.8rem"></p>
 
 <div class="metrics-grid">
-  <div class="metric-card"><label>After-tax spending goal</label><input type="number" class="val" id="m-goal" step="50" min="0" value="0" aria-label="After-tax spending goal per month"><div class="sub">per month, today&#39;s dollars</div></div>
+  <div class="metric-card"><label>After-tax spending goal</label><input type="number" class="val" id="m-goal" step="50" min="0" value="0" aria-label="After-tax spending goal per month"><div class="sub">per month, today&#39;s dollars</div><a class="btn ghost overview-withdrawals" href="./withdrawals.html?compare=1">Compare withdrawal options</a></div>
   <div class="metric-card"><label>Portfolio runs out</label><div class="val" id="m-depleted" style="color:var(--orange)">—</div><div class="sub" id="m-depleted-sub">&nbsp;</div></div>
   <div class="metric-card"><label>Max sustainable spending</label><div class="val" id="m-max" style="color:var(--green)">$0</div><div class="sub" id="m-max-sub">&nbsp;</div></div>
   <div class="metric-card"><label>Lifetime tax paid</label><div class="val" id="m-tax" style="color:var(--danger)">$0</div><div class="sub">income tax + OAS clawback</div></div>
@@ -121,7 +121,7 @@
       <label class="title">After-tax spending: <span id="spend-val" style="color:var(--accent);font-size:1.3rem">$0</span>/mo</label>
       <input type="range" id="spend-slider" min="2000" max="25000" step="250" value="9000" aria-label="Desired monthly after-tax spending">
       <div class="pick">
-        <label>Withdrawal order</label>
+        <label for="strategy">Withdrawal order</label>
         <select id="strategy">
           <option value="tfsa-first">TFSA → Non-reg → RRSP</option>
           <option value="rrsp-first">RRSP → Non-reg → TFSA</option>
@@ -130,6 +130,10 @@
           <option value="oas-smart">Keep income under OAS clawback</option>
         </select>
       </div>
+      <div class="pick">
+        <a class="btn ghost" href="./withdrawals.html?compare=1">Calculate best withdrawal options</a>
+      </div>
+      <p class="hint">Compare lower tax, more spending and ending net worth in the Withdrawal strategy finder.</p>
       <div class="pick">
         <label>Market</label>
         <select id="return-mode">

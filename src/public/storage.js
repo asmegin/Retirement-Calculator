@@ -65,7 +65,7 @@
       if(path==='/api/system')return response({mode:'standalone',authEnabled:false,authManagedByEnvironment:true});
       if(path.startsWith('/api/scenarios')){
         let list=await local('get','retirement-scenarios-v1')||[];
-        if(method==='POST'){const name=String(body.name||'').trim().slice(0,60);if(!name)throw new Error('Enter a scenario name.');list=list.filter(s=>s.name!==name);list.push({name,config:validate(body.config)});}
+        if(method==='POST'){const name=String(body.name||'').trim().slice(0,60);if(!name)throw new Error('Enter a scenario name.');list=list.filter(s=>s.name!==name);list.push({name,savedAt:new Date().toISOString(),config:validate(body.config)});}
         if(method==='DELETE')list=list.filter(s=>s.name!==decodeURIComponent(path.split('/').pop()));
         if(method!=='GET')await local('set','retirement-scenarios-v1',list);return response(method==='GET'?list:{ok:true});
       }

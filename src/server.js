@@ -103,6 +103,7 @@ async function prune() {
 }
 
 async function saveConfig(incoming) {
+  if(!incoming||typeof incoming!=='object'||!incoming.assumptions||!Array.isArray(incoming.incomes))throw new Error('Choose a retirement plan with household settings and people.');
   await ensureDirs();
   const normalized = Engine.normalizeConfig(incoming);
   normalized.onboardingComplete = true;
@@ -196,7 +197,7 @@ app.delete('/api/scenarios/:name', async (req, res) => {
 app.get('/api/projection', async (req, res) => {
   try {
     const config = await loadConfig();
-    if (req.query.strategy) config.assumptions.withdrawalStrategy = req.query.strategy;
+    if (req.query.strategy) {config.assumptions.withdrawalStrategy = req.query.strategy;delete config.assumptions.withdrawalPlan;}
     const sim = Engine.simulate(config);
     res.json({
       depletedYear: sim.depletedYear,

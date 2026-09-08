@@ -2,7 +2,7 @@
 const E=RetireEngine,Core=PlanningCore,$=id=>document.getElementById(id);
 const money=value=>new Intl.NumberFormat('en-CA',{style:'currency',currency:'CAD',maximumFractionDigits:0}).format(Number.isFinite(value)?value:0);
 const clone=value=>JSON.parse(JSON.stringify(value));
-let config,projection,sandbox,worker,optimized,revision=0,refreshTimer,sandboxTimer,sequence=0,objective='tax';
+let config,projection,sandbox,worker,optimized,orderComparison,workspaceDirty=false,revision=0,refreshTimer,sandboxTimer,sequence=0,objective='tax';
 const people=()=>config.incomes.slice(0,config.assumptions.householdType==='single'?1:2);
 function button(label,action,primary=false){const b=document.createElement('button');b.type='button';b.className='btn'+(primary?'':' ghost');b.textContent=label;b.onclick=action;return b;}
 function field(obj,key,label,help,type='number',options){
@@ -24,6 +24,7 @@ function table(parent,headers,rows){
   const body=document.createElement('tbody');rows.forEach(row=>{const r=document.createElement('tr');row.forEach(value=>{const td=document.createElement('td');td.textContent=value??'—';r.appendChild(td);});body.appendChild(r);});t.appendChild(body);parent.replaceChildren(t);
 }
 function changed(){
+  workspaceDirty=true;orderComparison?.invalidate();
   revision++;delete config.assumptions.withdrawalPlan;optimized=null;
   if(worker){worker.terminate();worker=null;$('optimization-status').textContent='Inputs changed. Run the search again for this plan.';}
   $('cancel-optimize').hidden=true;$('optimize').disabled=false;$('apply-optimized').hidden=true;$('export-withdrawals').hidden=true;
@@ -31,7 +32,6 @@ function changed(){
 }
 function refresh(){
   try{
-    config.assumptions.spendingMode='target';
     projection=E.simulate(config);summary();renderSandbox();
   }catch(error){$('save-status').textContent='Check inputs: '+error.message;}
 }
@@ -41,7 +41,11 @@ function summary(){
     const card=document.createElement('div');card.className='metric-card';const l=document.createElement('label');l.textContent=label;const v=document.createElement('div');v.className='val';v.textContent=value;const s=document.createElement('div');s.className='sub';s.textContent=sub;card.append(l,v,s);$('workspace-summary').appendChild(card);
   });
 }
-function render(){renderScenarioControls();renderOptimizationControls();refresh();}
+function render(){
+  orderComparison?.invalidate();$('order-comparison').replaceChildren();
+  if(document.body.dataset.page==='withdrawals')orderComparison=PlanComparison.mount($('order-comparison'),{task:'withdrawals',getConfig:()=>config,onApply:c=>{receivePlan(c);workspaceDirty=true;$('save-status').textContent='Withdrawal order applied. Save plan to keep it.';}});
+  renderScenarioControls();renderOptimizationControls();refresh();
+}
 function renderScenarioControls(){
   sandbox=clone(config);$('scenario-controls').replaceChildren();const g=grid($('scenario-controls'));
   const details={name:'My alternative',downsizeAge:70,replacementValue:500000,downsize:false};sandbox._scenario=details;
@@ -71,7 +75,7 @@ $('scenario-save').onclick=async()=>{try{const response=await AppStorage.fetch('
 async function loadSaved(){try{const list=await(await AppStorage.fetch('/api/scenarios')).json();$('saved-scenarios').replaceChildren();list.forEach(s=>{$('saved-scenarios').append(button('Compare: '+s.name,()=>compareMetrics(projection,E.simulate(s.config),s.name,$('scenario-result'))));});}catch(error){$('saved-scenarios').textContent='Saved scenarios could not be loaded.';}}
 function renderOptimizationControls(){const obj={objective};const f=field(obj,'objective','Search objective','Minimize taxes or tax minus benefits while preserving the baseline estate; alternatively maximize ending estate. The search evaluates a bounded set of multi-year schedules.','select',[{value:'tax',label:'Reduce lifetime tax'},{value:'benefits',label:'Improve tax and benefits'},{value:'estate',label:'Maximize ending estate'}]);f.querySelector('select').onchange=event=>objective=event.target.value;$('optimization-controls').replaceChildren(f);}
 $('optimize').onclick=()=>{
-  if(worker)worker.terminate();const id=++revision;optimized=null;$('optimize').disabled=true;$('cancel-optimize').hidden=false;$('apply-optimized').hidden=true;
+  if(worker)worker.terminate();const id=++revision;optimized=null;$('export-withdrawals').hidden=true;$('optimization-result').replaceChildren();$('optimize').disabled=true;$('cancel-optimize').hidden=false;$('apply-optimized').hidden=true;
   $('optimization-status').textContent='Comparing full retirement paths…';worker=AppWorkers.create('optimization');
   worker.onmessage=event=>{if(event.data.id!==revision||!worker)return;const {progress,result,error}=event.data;if(progress){$('optimization-status').textContent='Evaluated '+progress.evaluated+' / '+progress.maxEvaluations+' schedules. Best personal tax so far: '+money(progress.bestTax)+'.';return;}
     worker.terminate();worker=null;$('optimize').disabled=false;$('cancel-optimize').hidden=true;
@@ -85,22 +89,23 @@ $('optimize').onclick=()=>{
 };
 function withdrawalRows(result){return result.years.map(r=>{const draw=types=>r.accounts.filter(a=>types.includes(a.type)).reduce((s,a)=>s+a.draw+a.forced,0);return [r.year,money(draw(['RRSP','RRIF','DC'])),money(draw(['TFSA'])),money(draw(['TAXABLE'])),money(r.totalTax),money(r.gis+r.provincialBenefits),money(r.netWorth)];});}
 $('cancel-optimize').onclick=()=>{revision++;if(worker)worker.terminate();worker=null;$('optimize').disabled=false;$('cancel-optimize').hidden=true;$('optimization-status').textContent='Search cancelled. Your plan is unchanged.';};
-$('apply-optimized').onclick=()=>{if(!optimized)return;config.assumptions.withdrawalStrategy=optimized.withdrawalStrategy;config.assumptions.withdrawalPlan=optimized.withdrawalPlan;$('save-status').textContent='Withdrawal plan applied in workspace. Save plan to retain it.';refresh();};
+$('apply-optimized').onclick=()=>{if(!optimized)return;workspaceDirty=true;orderComparison?.invalidate();config.assumptions.withdrawalStrategy=optimized.withdrawalStrategy;config.assumptions.withdrawalPlan=optimized.withdrawalPlan;$('save-status').textContent='Withdrawal plan applied in workspace. Save plan to retain it.';refresh();};
 $('export-withdrawals').onclick=()=>{if(!optimized)return;const csv=[['year','rrsp_rrif','tfsa','taxable','tax','benefits','ending_net_worth'],...withdrawalRows(optimized.result)].map(row=>row.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));const link=document.createElement('a');link.href=url;link.download='withdrawal-plan.csv';link.click();URL.revokeObjectURL(url);};
 $('save-plan').onclick=async()=>{
   $('save-plan').disabled=true;try{
     const normalized=E.normalizeConfig(config);const result=E.simulate(normalized);
     if(result.years.length===0)throw new Error('The plan must extend into the current year.');
-    const response=await AppStorage.fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(normalized)});const body=await response.json();if(!response.ok)throw new Error(body.error||'Save failed');config=body.config||normalized;$('save-status').textContent='Plan saved.';
+    const response=await AppStorage.fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(normalized)});const body=await response.json();if(!response.ok)throw new Error(body.error||'Save failed');config=body.config||normalized;workspaceDirty=false;$('save-status').textContent='Plan saved.';
   }catch(error){$('save-status').textContent=error.message;}finally{$('save-plan').disabled=false;}
 };
-AppStorage.fetch('/api/config').then(r=>{if(!r.ok)throw new Error('Could not load plan');return r.json();}).then(c=>{config=E.normalizeConfig(c);render();loadSaved();}).catch(error=>$('save-status').textContent=error.message);
+AppStorage.fetch('/api/config').then(r=>{if(!r.ok)throw new Error('Could not load plan');return r.json();}).then(c=>{config=E.normalizeConfig(c);render();loadSaved();if(new URLSearchParams(location.search).has('compare'))orderComparison?.run();}).catch(error=>$('save-status').textContent=error.message);
 
 function receivePlan(c){
+  workspaceDirty=false;
   revision++;worker?.terminate();worker=null;optimized=null;
   $('optimize').disabled=false;$('cancel-optimize').hidden=true;$('apply-optimized').hidden=true;$('export-withdrawals').hidden=true;
   $('optimization-result').replaceChildren();$('optimization-status').textContent='Plan updated. Run the search for this plan.';
   config=E.normalizeConfig(c);render();
 }
 AppStorage.bindState(()=>config,receivePlan);
-AppStorage.subscribe(receivePlan);
+AppStorage.subscribe(c=>{if(workspaceDirty){$('save-status').textContent='The saved plan changed in another window. Your unsaved workspace edits are kept here.';return;}receivePlan(c);});

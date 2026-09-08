@@ -264,7 +264,7 @@ function render() {
   if(page==='household')editor.appendChild(childcareSection());
   if(page==='accounts')editor.prepend(listSection('accounts'));
   if(page==='plan-settings')editor.append(advanced(phasesSection(),'Spending changes over time'),advanced(estateSection(),'Estate and survivor settings'));
-  if(page==='properties'){editor.appendChild(listSection('realEstate'));editor.append(advanced(debtComparisonSection(),'Compare extra debt payments with investing'));}
+  if(page==='properties'){editor.appendChild(listSection('realEstate'));PlanComparison.mount(editor,{task:'rental',getConfig:()=>config,onApply:c=>{config=E.normalizeConfig(c);markSettingsDirty();render();toast('Sale and CCA settings applied. Save changes to keep them.');}});editor.append(advanced(debtComparisonSection(),'Compare extra debt payments with investing'));}
   if(page==='pensions'){editor.appendChild(listSection('dbPensions'));editor.appendChild(advanced(earningsSection(),'CPP / QPP earnings history'));}
 }
 
@@ -552,7 +552,7 @@ configureSettingsSchema();
 function receiveSettings(c){config=E.normalizeConfig(c);config.assumptions.spendingMode='target';settingsDirty=false;el('settings-save-status').textContent='All changes saved';render();}
 AppStorage.bindState(()=>config,receiveSettings);
 AppStorage.subscribe(c=>{if(settingsDirty){el('settings-save-status').textContent='The saved plan changed in another window. Your unsaved edits are kept here.';return;}receiveSettings(c);});
-el('editor').addEventListener('input',markSettingsDirty);
-el('editor').addEventListener('change',markSettingsDirty);
+el('editor').addEventListener('input',event=>{if(!event.target.closest('.comparison-tool'))markSettingsDirty();});
+el('editor').addEventListener('change',event=>{if(!event.target.closest('.comparison-tool'))markSettingsDirty();});
 el('editor').addEventListener('click',event=>{if(event.target.closest('button')&&/^(Add|Remove|Use these earnings)/.test(event.target.textContent))markSettingsDirty();});
 init().catch(error=>toast(error.message,true));

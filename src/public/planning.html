@@ -9,6 +9,7 @@
 <div id="workspace-summary" class="metrics-grid" hidden></div>
 
 <main>
+<div id="order-comparison"></div>
 
 <section class="card tool-section" id="scenarios"><div class="eyebrow">02 / EXPLORE THE POSSIBILITIES</div><h2>One plan. Different possibilities.</h2><p class="section-description">Your saved plan stays intact while you try changes. Compare retirement ages, CPP timing, or a smaller home on the same assumptions.</p><div id="scenario-controls"></div><div class="row-actions"><button class="btn ghost" id="scenario-reset">Reset sandbox</button><button class="btn" id="scenario-save">Save sandbox as scenario</button><button class="btn ghost" id="scenario-apply">Use sandbox in this workspace</button></div><div id="scenario-result" class="data-scroll"></div><div id="saved-scenarios"></div></section>
 <section class="card tool-section" id="optimization"><div class="eyebrow">03 / MAKE YOUR SAVINGS WORK</div><h2>A withdrawal plan, year by year</h2><p class="section-description">Compare withdrawal orders, then search annual RRSP/RRIF dollar targets across your full retirement. The solver respects mandatory minimums, recalculates tax and benefits, and preserves a funded baseline and its ending estate when reducing tax.</p><div id="optimization-controls"></div><div class="row-actions"><button class="btn" id="optimize">Find a withdrawal plan</button><button class="btn ghost" id="cancel-optimize" hidden>Cancel search</button><button class="btn ghost" id="apply-optimized" hidden>Use this withdrawal plan</button><button class="btn ghost" id="export-withdrawals" hidden>Export withdrawal schedule</button></div><div id="optimization-status" class="tool-status" role="status">Choose an objective to start. This is a bounded numerical search, not a guarantee of the global minimum tax.</div><div id="optimization-result" class="data-scroll"></div></section>
@@ -17,4 +18,4 @@
 
 
 
-</main><script src="./planning-ui.js"></script></body></html>
+</main><script src="./comparison-ui.js"></script><script src="./planning-ui.js"></script></body></html>

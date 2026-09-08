@@ -409,7 +409,7 @@
       return debt.type === 'heloc' ? annual / perYear : Math.pow(1 + annual / 2, 2 / perYear) - 1;
     }
 
-    var linear = !(num(debt.interestRate) > 0 && pmt > 0);
+    var linear = !(pmt > 0);
     var span = Math.max(1, (int(debt.payoffYear) || endYear) - startYear + 1);
     var linearPrincipal = bal / span;
 
@@ -762,9 +762,10 @@
       var anyRetired = retired[0] || retired[1];
       var smithInterest=[0,0],smithAdvance=0,extraDebtPayments=0,homePurchaseCash=0;
       props.forEach(function(p){
-        var s=p.sched.byYear[y];if(!p.sold)extraDebtPayments+=num(s.extraPayment);
+        var s=p.sched.byYear[y],operating=!p.sold&&p.def.saleYear!==y&&(!p.def.purchaseYear||y>=p.def.purchaseYear);
+        if(operating)extraDebtPayments+=num(s.extraPayment);
         if(p.def.smithEnabled){
-          var advance=p.sold?0:Math.min(Math.max(0,p.def.smithLimit-p.smithBalance),s.principal);
+          var advance=operating?Math.min(Math.max(0,p.def.smithLimit-p.smithBalance),s.principal):0;
           var interest=p.smithBalance*p.def.smithRate/100;
           p.smithBalance+=advance;smithAdvance+=advance;
           p.smithAccount.bal+=advance;p.smithAccount.basis+=advance;
@@ -795,7 +796,8 @@
           var grossPrice = p.value;
           var costs = grossPrice * num(p.def.sellingCostPct) / 100;
           var netProceeds = grossPrice - costs;
-          var mortgageOff = s.endBalance;
+          // Sales occur at the start of the year, before rent or debt payments.
+          var mortgageOff = s.endBalance + s.principal;
           var cash = netProceeds - mortgageOff;
           var gain = netProceeds - num(p.def.acb);
           var buildingProceeds = netProceeds*p.def.buildingSalePercent/100;
@@ -817,7 +819,7 @@
             saleRecapture[0] += (recapture-terminalLoss) * sp;
             saleRecapture[1] += (recapture-terminalLoss) * (1 - sp);
           }
-          saleProceedsCash += Math.max(0, cash);
+          saleProceedsCash += cash;
           saleEvents.push({
             name: p.def.name, grossPrice: grossPrice, sellingCosts: costs, mortgageDischarged: mortgageOff,
             netCash: cash, capitalGain: gain,
@@ -845,7 +847,7 @@
       if (A.reinvestPayoffPayments && !(retired[0] && retired[1])) {
         props.forEach(function (p) {
           var s2 = p.sched.byYear[y];
-          if (p.def.reinvestOnPayoff && s2 && s2.endBalance <= 0.01 && s2.payment <= 0.01) redirected += p.sched.annualPayment;
+          if (!p.sold && p.def.reinvestOnPayoff && s2 && s2.endBalance <= 0.01 && s2.payment <= 0.01) redirected += p.sched.annualPayment;
         });
       }
 
@@ -1342,6 +1344,7 @@
       }
 
       var taxResult = evalTax(drawTaxable[0], drawTaxable[1]);
+      var saleIncomeTax = saleEvents.length ? taxResult.total - evalTax(drawTaxable[0]-person[0].sale,drawTaxable[1]-person[1].sale).total : 0;
       unfunded=Math.max(unfunded,corporateFundingShortfall);
       var totalDrawn = Object.keys(draws).reduce(function (s, id) { return s + draws[id]; }, 0);
       var netCash = householdCashBase() + totalDrawn - taxResult.total;
@@ -1443,7 +1446,9 @@
               if(p.def.type==='rental'){
                 var building=p.value*p.def.buildingSalePercent/100;
                 var recapture=Math.max(0,Math.min(building,p.def.buildingAcb)-p.ucc);
-                terminalIncome[k]+=(Math.max(0,p.value-p.def.acb)*.5+recapture)*share;
+                var terminalLoss=Math.max(0,p.ucc-building),landGain=p.value-building-(p.def.acb-p.def.buildingAcb);
+                var allocation=Math.min(terminalLoss,Math.max(0,landGain));terminalLoss-=allocation;building+=allocation;landGain-=allocation;
+                terminalIncome[k]+=(Math.max(0,Math.max(0,building-p.def.buildingAcb)+landGain)*CAPITAL_GAINS_INCLUSION+recapture-terminalLoss)*share;
                 if(remaining.length){p.def.acb+=(p.value-p.def.acb)*share;p.def.buildingAcb+=(building-p.def.buildingAcb)*share;p.ucc+=(building-p.ucc)*share;}
               }
               if(p.def.type!=='heloc')probateAssets+=Math.max(0,p.value-p.sched.byYear[y].endBalance)*share;
@@ -1458,9 +1463,10 @@
         });
         if(dying.length){
           terminalResult=evalTax(drawTaxable[0]+terminalIncome[0],drawTaxable[1]+terminalIncome[1]);
-          terminalTax=Math.max(0,terminalResult.total-taxResult.total);
+          terminalTax=terminalResult.total-taxResult.total;
           dying.forEach(function(k){alive[k]=false;});
           var bill=terminalTax+probateFees;
+          if(bill<0){nonRegistered.bal-=bill;nonRegistered.basis-=bill;bill=0;}
           accts.filter(function(ac){return ac.type==='TAXABLE'||ac.type==='TFSA';}).forEach(function(ac){var paid=Math.min(bill,Math.max(0,ac.bal));ac.bal-=paid;bill-=paid;});
           estateLiability+=bill;otherDebt+=bill;totalDebt+=bill;
           portfolio=accts.reduce(function(s,ac){return s+Math.max(0,ac.bal);},0);
@@ -1511,7 +1517,7 @@
         portfolio: portfolio, principalEquity: principalEquity, rentalEquity: rentalEquity,
         debt: totalDebt, otherDebt: otherDebt, netWorth: netWorth,
         householdDebtPayments: householdDebtPayments,
-        saleEvents: saleEvents, saleProceeds: saleProceedsCash, saleCapitalLoss: saleCapitalLoss,
+        saleEvents: saleEvents, saleProceeds: saleProceedsCash, saleCapitalLoss: saleCapitalLoss, saleIncomeTax: saleIncomeTax,
         accounts: acctRows, debts: debtRows,
         person: active.map(function (k) {
           var annualTax=terminalResult||taxResult,pt = k === 0 ? annualTax.p1 : annualTax.p2;
@@ -1563,7 +1569,7 @@
       var mid = (lo + hi) / 2;
       base.assumptions.desiredMonthlyIncome = mid;
       var res = simulate(base, Object.assign({ fastSolve: true,spendingScale:base.assumptions.spendingMode === 'categories' ? mid/Math.max(1,Planning.spendingBaseline(base.assumptions.spendingCategories)/12) : 1 }, opts || {}));
-      if (res.depletedYear === null) { best = mid; lo = mid; } else { hi = mid; }
+      if (isFunded(res)) { best = mid; lo = mid; } else { hi = mid; }
     }
     return best;
   }
@@ -1595,6 +1601,17 @@
     var candidates = retirementCandidates(cfg,opts), base = clone(cfg), count = 0;
     for (var i=0;i<candidates.length;i++) {
       candidates[i].forEach(function(age,k) { base.incomes[k].targetRetireAge=age; });
+      if(opts.sellRentals){
+        var paths=rentalSaleSchedules(base,opts),winner=null,winnerSales=null;
+        for(var j=0;j<paths.length;j++){
+          var trial=clone(base);applyRentalSales(trial,paths[j]);
+          var projected=simulate(trial,{startYear:opts.startYear});count++;
+          if(opts.onProgress&&count%10===0)opts.onProgress(count,candidates.length*paths.length);
+          if(isFunded(projected)&&(!winner||projected.finalNetWorthReal>winner.finalNetWorthReal+1)) {winner=projected;winnerSales=paths[j];}
+        }
+        if(winner)return {found:true,ages:candidates[i],years:candidates[i].map(function(a,k){return cfg.incomes[k].birthYear+a;}),tested:count,goal:cfg.assumptions.desiredMonthlyIncome,endYear:winner.endYear,rentalSales:winnerSales};
+        continue;
+      }
       var result = simulate(base,{startYear:opts.startYear,fastSolve:true}); count++;
       if (opts.onProgress && (count%10 === 0)) opts.onProgress(count,candidates.length);
       if (result.years.length && result.depletedYear === null && result.years.every(function(r) { return r.unfunded <= 1; })) {
@@ -1609,9 +1626,11 @@
   }
 
   function optimizeWithdrawals(cfg,opts){
-    opts=opts||{};cfg=normalizeConfig(cfg);delete cfg.assumptions.withdrawalPlan;
+    opts=opts||{};cfg=normalizeConfig(cfg);
+    var originalPlan=clone(cfg.assumptions.withdrawalPlan||null);
     var evaluated=0,maxEvaluations=int(opts.maxEvaluations,700),objective=opts.objective||'tax';
-    var baseline=simulate(cfg,{startYear:opts.startYear}),best=baseline,bestPlan=null,bestStrategy=cfg.assumptions.withdrawalStrategy;
+    var baseline=simulate(cfg,{startYear:opts.startYear}),best=baseline,bestPlan=originalPlan,bestStrategy=cfg.assumptions.withdrawalStrategy;
+    delete cfg.assumptions.withdrawalPlan;
     function score(r){
       var shortfall=r.years.reduce(function(s,y){return s+y.unfunded*y.deflator;},0);
       var tax=r.lifetimeTax+r.lifetimeCorporateTax;
@@ -1625,7 +1644,7 @@
       if(opts.onProgress&&evaluated%10===0)opts.onProgress({evaluated,maxEvaluations,bestTax:best.lifetimeTax,objective});
       var s=score(result);
       // Preserve a funded baseline and its after-tax ending estate while reducing tax.
-      if(s<bestScore-.01&&(baseline.depletedYear!==null||result.depletedYear===null)&&(objective==='estate'||result.finalNetWorthReal>=baseline.finalNetWorthReal-1)){
+      if(s<bestScore-.01&&(!isFunded(baseline)||isFunded(result))&&(objective==='estate'||result.finalNetWorthReal>=baseline.finalNetWorthReal-1)){
         best=result;bestScore=s;bestPlan=plan?clone(plan):null;bestStrategy=strategy;return true;
       }
       return false;
@@ -1644,11 +1663,59 @@
       }});
     });
     var verified=simulate(cfg,{startYear:opts.startYear,withdrawalPlan:bestPlan,withdrawalStrategy:bestStrategy});
-    if(score(verified)>score(baseline)+1 || baseline.depletedYear===null&&verified.depletedYear!==null || objective!=='estate'&&verified.finalNetWorthReal<baseline.finalNetWorthReal-1){verified=baseline;bestPlan=null;bestStrategy=cfg.assumptions.withdrawalStrategy;}
+    if(score(verified)>score(baseline)+1 || isFunded(baseline)&&!isFunded(verified) || objective!=='estate'&&verified.finalNetWorthReal<baseline.finalNetWorthReal-1){verified=baseline;bestPlan=originalPlan;bestStrategy=cfg.assumptions.withdrawalStrategy;}
     return {baseline:baseline,result:verified,withdrawalPlan:bestPlan,withdrawalStrategy:bestStrategy,evaluated,objective,
       taxSavings:baseline.lifetimeTax+baseline.lifetimeCorporateTax-verified.lifetimeTax-verified.lifetimeCorporateTax,
       benefitChange:verified.lifetimeBenefits-baseline.lifetimeBenefits,estateChange:verified.finalNetWorthReal-baseline.finalNetWorthReal,
       globalOptimum:false};
+  }
+
+  function isFunded(r){return r.years.length>0&&r.depletedYear===null&&r.years.every(function(y){return y.unfunded<=1;});}
+  function totalTax(r){return r.lifetimeTax+r.lifetimeCorporateTax;}
+  function compareWithdrawalOrders(cfg,opts){
+    opts=opts||{};cfg=normalizeConfig(cfg);
+    var baseline=simulate(cfg,{startYear:opts.startYear});
+    var rows=[{label:'Current settings',strategy:cfg.assumptions.withdrawalStrategy,plan:cfg.assumptions.withdrawalPlan||null,config:clone(cfg)}];
+    Object.keys(WITHDRAWAL_ORDERS).forEach(function(strategy){var c=clone(cfg);delete c.assumptions.withdrawalPlan;c.assumptions.withdrawalStrategy=strategy;rows.push({label:strategy,strategy:strategy,plan:null,config:c});});
+    rows.forEach(function(row,i){var r=i===0?baseline:simulate(row.config,{startYear:opts.startYear});row.tax=totalTax(r);row.estate=r.finalNetWorthReal;row.funded=isFunded(r);row.shortfallYear=(r.years.find(function(y){return y.unfunded>1;})||{}).year||null;row.monthlySpend=maxSustainableSpend(row.config,{startYear:opts.startYear});delete row.config;if(opts.onProgress)opts.onProgress({evaluated:i+1,maxEvaluations:rows.length});});
+    var viable=rows.filter(function(r){return r.funded;});
+    return {rows:rows,bestTax:viable.reduce(function(a,b){return !a||b.tax<a.tax?b:a;},null),bestEstate:viable.reduce(function(a,b){return !a||b.estate>a.estate?b:a;},null),bestSpending:rows.reduce(function(a,b){return b.monthlySpend>a.monthlySpend?b:a;},rows[0])};
+  }
+  function applyRentalSales(cfg,sales){sales.forEach(function(s){cfg.realEstate[s.index].saleYear=s.year;});}
+  function rentalSaleSchedules(cfg,opts){
+    opts=opts||{};var start=opts.startYear||new Date().getFullYear(),projection=simulate(cfg,{startYear:start});
+    var rentals=cfg.realEstate.map(function(p,index){return {p:p,index:index};}).filter(function(x){return x.p.type==='rental'&&(!x.p.saleYear||x.p.saleYear>=start);});
+    var current=rentals.map(function(x){return {index:x.index,year:x.p.saleYear};}),paths=[current],seen=new Set([JSON.stringify(current)]);
+    function add(path){var key=JSON.stringify(path);if(!seen.has(key)){paths.push(path);seen.add(key);}}
+    add(rentals.map(function(x){return {index:x.index,year:0};}));
+    for(var year=start;year<=projection.endYear;year++){
+      if(rentals.length&&rentals.every(function(x){return !x.p.purchaseYear||year>=x.p.purchaseYear;}))add(rentals.map(function(x){return {index:x.index,year:year};}));
+    }
+    return paths;
+  }
+  function compareRentalSales(cfg,opts){
+    opts=opts||{};cfg=normalizeConfig(cfg);var index=int(opts.propertyIndex,-1),property=cfg.realEstate[index];
+    if(!property||property.type!=='rental')throw new Error('Choose a rental property first.');
+    var start=opts.startYear||new Date().getFullYear();
+    if(property.saleYear&&property.saleYear<start)throw new Error('This rental has a past sale year. Update Properties to describe what you own today.');
+    if(property.acb<=0||property.buildingAcb>property.acb||property.uccPool>property.buildingAcb)throw new Error('Check total cost, building cost and remaining UCC under Properties. UCC must not exceed building cost, and building cost must not exceed total cost.');
+    // All alternatives include the same terminal-tax assumptions, including holding.
+    cfg.assumptions.estate.enabled=true;
+    var baseline=simulate(cfg,{startYear:start}),rows=[],candidates=[{label:'Current settings',year:property.saleYear,cca:property.ccaEnabled},{label:'Keep through plan',year:0,cca:property.ccaEnabled}];
+    for(var year=Math.max(start,property.purchaseYear||start);year<=baseline.endYear;year++){
+      candidates.push({label:'Sell '+year,year:year,cca:property.ccaEnabled});
+      if(opts.compareCCA)candidates.push({label:'Sell '+year+'; no future CCA',year:year,cca:false});
+    }
+    if(opts.compareCCA)candidates.push({label:'Keep; no future CCA',year:0,cca:false});
+    candidates.forEach(function(choice,i){
+      var c=clone(cfg);c.realEstate[index].saleYear=choice.year;c.realEstate[index].ccaEnabled=choice.cca;
+      if(i!==0)delete c.assumptions.withdrawalPlan;
+      var r=i===0?baseline:simulate(c,{startYear:start}),saleRow=r.years.find(function(y){return y.year===choice.year;}),event=saleRow&&saleRow.saleEvents.find(function(s){return s.name===property.name;});
+      rows.push({label:choice.label,year:choice.year,cca:choice.cca,tax:totalTax(r),estate:r.finalNetWorthReal,funded:isFunded(r),shortfallYear:(r.years.find(function(y){return y.unfunded>1;})||{}).year||null,benefits:r.lifetimeBenefits,sale:event||null,saleIncomeTax:event?saleRow.saleIncomeTax:null,taxChange:totalTax(r)-totalTax(baseline),estateChange:r.finalNetWorthReal-baseline.finalNetWorthReal});
+      if(opts.onProgress)opts.onProgress({evaluated:i+1,maxEvaluations:candidates.length});
+    });
+    var funded=rows.filter(function(r){return r.funded;});
+    return {rows:rows,propertyIndex:index,propertyName:property.name,startYear:start,endYear:baseline.endYear,includesTerminalTax:true,bestTax:funded.reduce(function(a,b){return !a||b.tax<a.tax?b:a;},null),bestEstate:funded.reduce(function(a,b){return !a||b.estate>a.estate?b:a;},null)};
   }
 
   function monteCarloRun(cfg, runs, seed, onProgress, done) {
@@ -1662,13 +1729,13 @@
           returnMode: 'monte-carlo', rand: mulberry32(seed + run * 7919),
           fastSolve: true, contributionPlan: plan
         });
-        results.push({ depletedYear: res.depletedYear, finalNetWorth: res.finalNetWorth, lifetimeTax: res.lifetimeTax });
+        results.push({ depletedYear: res.depletedYear, funded:isFunded(res), finalNetWorth: res.finalNetWorth, lifetimeTax: res.lifetimeTax });
         res.years.forEach(function (r) { (byYear[r.year] = byYear[r.year] || []).push(r.portfolio); });
       }
       if (onProgress) onProgress(run / runs);
       if (run < runs) setTimeout(chunk, 0);
       else {
-        var successes = results.filter(function (r) { return r.depletedYear === null; }).length;
+        var successes = results.filter(function (r) { return r.funded; }).length;
         var bands = Object.keys(byYear).map(function (yr) {
           var arr = byYear[yr].sort(function (a, b) { return a - b; });
           function pct(p) { return arr[Math.min(arr.length - 1, Math.floor(p * arr.length))]; }
@@ -1684,7 +1751,7 @@
     var ok = 0;
     for (var i = 0; i < runs; i++) {
       var r = simulate(cfg, { returnMode: 'monte-carlo', rand: mulberry32((seed || 1) + i * 7919), fastSolve: true, contributionPlan: plan });
-      if (r.depletedYear === null) ok++;
+      if (isFunded(r)) ok++;
     }
     return ok / runs;
   }
@@ -1731,7 +1798,7 @@
   return {
     simulate: simulate, maxSustainableSpend: maxSustainableSpend,
     solveRetirementAges:solveRetirementAges, retirementCandidates:retirementCandidates,
-    optimizeWithdrawals:optimizeWithdrawals,Planning:Planning,
+    optimizeWithdrawals:optimizeWithdrawals,compareWithdrawalOrders:compareWithdrawalOrders,compareRentalSales:compareRentalSales,Planning:Planning,
     monteCarloRun: monteCarloRun, monteCarloSync: monteCarloSync,
     buildTimeline: buildTimeline, normalizeConfig: normalizeConfig, defaultConfig: defaultConfig,
     personTax: personTax, marginalRate: marginalRate, householdTax: householdTax,
