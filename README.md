@@ -8,7 +8,7 @@ Run it as a **completely static site on GitHub Pages**, **on Docker/Unraid**, **
 
 If the repository is private, sign in to GitHub with an account that has access before opening these downloads.
 
-The hybrid deployment changes described here are in the current source. The existing `v1.0.0` release and ZIP are unchanged; build this checkout to use the new deployment modes. See the [hybrid deployment guide](docs/hybrid-deployment.md).
+**Release candidate: 1.01 (`v1.0.1`)** - [Changes and upgrade notes](docs/releases/v1.0.1.md). The draft is unpublished; the latest published release remains 1.0.0. Build this checkout to try the candidate. See the [hybrid deployment guide](docs/hybrid-deployment.md).
 
 ## Contents
 
@@ -124,7 +124,7 @@ docker compose up -d --build
 
 Open **http://localhost:3333**, or **http://YOUR-SERVER-IP:3333** from another device on your network.
 
-The included [compose.yaml](compose.yaml) can build this checkout or use `ghcr.io/asmegin/retirement-calculator:${APP_VERSION}`. The command above builds the current source; pulling `1.0.0` retrieves the original release. The container restarts automatically and stores the shared plan and backups in `./data`. Keep that directory when updating or replacing the container.
+The included [compose.yaml](compose.yaml) can build this checkout or use `ghcr.io/asmegin/retirement-calculator:${APP_VERSION}`. The command above builds the current source as `1.0.1`. Its registry image will be available after the release tag build succeeds; pulling `1.0.0` retrieves the original release. The container restarts automatically and stores the shared plan and backups in `./data`. Keep that directory when updating or replacing the container.
 
 Useful commands, run from the same directory:
 
@@ -154,7 +154,7 @@ In **Docker → Add Container**, use:
 | Setting | Value |
 | --- | --- |
 | Name | `retirement-calculator` |
-| Repository | `ghcr.io/asmegin/retirement-calculator:1.0.0` |
+| Repository | `ghcr.io/asmegin/retirement-calculator:1.0.1` after the release build, or `retirement-calculator:local` for the draft |
 | Network type | `Bridge` |
 | Container port | `3333` / TCP |
 | Host port | `3333`, or another unused port |
