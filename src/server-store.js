@@ -30,8 +30,8 @@ class ServerStore {
   backup(){return this.serial(async()=>this.snapshot(await this.config()));}
   listBackups(){return this.serial(async()=>{const files=(await fs.readdir(this.backups)).filter(f=>f.endsWith('.json')).sort().reverse();return Promise.all(files.map(async file=>{const s=await fs.stat(path.join(this.backups,file));return {file,size:s.size,modified:s.mtime};}));});}
   restore(file){return this.serial(async()=>{
-    if(typeof file!=='string'||path.basename(file)!==file||!file.endsWith('.json'))throw new Error('Invalid backup name.');
-    const raw=await this.json(path.join(this.backups,file),null);if(!raw)throw new Error('Backup not found.');
+    if(typeof file!=='string'||! /^[A-Za-z0-9][A-Za-z0-9_.-]*\.json$/.test(file)||path.basename(file)!==file)throw Object.assign(new Error('Invalid backup name.'),{code:'PLAN_VALIDATION'});
+    const raw=await this.json(path.join(this.backups,file),null);if(!raw)throw Object.assign(new Error('Backup not found.'),{code:'PLAN_VALIDATION'});
     const c=Schema.validate(raw);await this.snapshot(await this.config());await this.write(path.join(this.directory,'config.json'),c);return c;
   });}
   async scenarios(){const list=await this.json(path.join(this.directory,'scenarios.json'),[]);if(!Array.isArray(list))throw new Error('Invalid saved scenarios file. Restore it from backup.');return list;}

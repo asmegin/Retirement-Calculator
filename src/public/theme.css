@@ -53,3 +53,24 @@ body[data-page=overview]>.dashboard-controls{display:none}body[data-page=overvie
 [data-theme=dark] .delta-positive{color:#86efac}[data-theme=dark] .delta-negative{color:#fca5a5}
 .comparison-tool{margin:20px 0}.comparison-tool p{line-height:1.7}.comparison-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:16px 0}.comparison-detail{padding:18px;margin-top:16px;background:var(--panel2);border-radius:8px}.comparison-tool table{width:100%;border-collapse:collapse}.comparison-tool th,.comparison-tool td{padding:12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}.comparison-tool label{display:block}.comparison-tool input[type=checkbox]{width:auto;margin-right:8px}.comparison-tool .data-scroll{overflow:auto;max-height:520px}.comparison-tool{min-width:0}.comparison-cards h3{font-size:16px}
 .overview-withdrawals{margin-top:12px;white-space:normal!important;max-width:100%;font-size:12px!important}
+
+/* Discreet display: originals are excluded from display/accessibility, never changed in the plan. */
+.private-mask,.private-input-mask{display:none}
+.private-field{display:inline-grid;position:relative;min-width:0;max-width:100%}
+.private-field>input,.private-field>select{max-width:100%}
+.privacy-mode .private-original{display:none!important}
+.privacy-mode .private-mask{display:inline}
+.privacy-mode .private-field>input,.privacy-mode .private-field>select{visibility:hidden!important;pointer-events:none}
+.privacy-mode .private-input-mask{display:grid;position:absolute;inset:0;place-items:center;border:1px solid var(--line);border-radius:6px;background:var(--panel);pointer-events:none}
+.privacy-mode canvas{visibility:hidden!important;pointer-events:none}
+.backup-encryption{display:flex;align-items:center;gap:.4rem;font-size:.8rem}
+.backup-dialog{max-width:min(440px,90vw);border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--text);padding:1.5rem}
+.backup-dialog label{display:grid;gap:.4rem;margin:.8rem 0}
+.backup-dialog input{width:100%;box-sizing:border-box}
+.backup-dialog [hidden]{display:none!important}
+.dialog-actions{display:flex;justify-content:flex-end;gap:.6rem}
+#backup-error{color:var(--danger)}
+.privacy-notice{font-size:.8rem;color:var(--muted);padding:1rem;text-align:center}
+.demo-badge{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;padding:.8rem;border:2px solid var(--accent);border-radius:8px;margin:1rem 0}
+
+.demo-badge[hidden]{display:none!important}

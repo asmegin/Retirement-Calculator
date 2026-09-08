@@ -203,14 +203,9 @@ with tempfile.TemporaryDirectory(prefix='retirement-browser-data-') as data:
             page.get_by_role('button',name='Setup Wizard',exact=True).click()
             assert page.locator('#setup-wizard').is_visible()
             assert page.locator('#wizard-body input:not([aria-describedby]),#wizard-body select:not([aria-describedby])').count()==0
-            for _ in range(4):page.locator('#wizard-next').click()
-            assert not page.locator('#wizard-body').get_by_label('First FHSA opened in year',exact=True).count()
-            page.locator('#wizard-body').get_by_label('Type',exact=True).first.select_option('FHSA')
-            assert page.locator('#wizard-body').get_by_label('First FHSA opened in year',exact=True).count()==2
-            page.locator('#wizard-next').click()
-            wizard_age=page.locator('#wizard-body [data-setting=startAge] select').last
-            wizard_age.select_option('55')
-            assert page.locator('#wizard-body [data-setting=lifetime] input').last.input_value()=='2000'
+            for _ in range(2):page.locator('#wizard-next').click()
+            assert page.locator('#wizard-body').get_by_label('RRSP balance',exact=True).count()>=1
+            assert page.locator('#wizard-body').get_by_label('Corporate balance',exact=True).count()==2
             assert page.evaluate('config.dbPensions.at(-1).startAge')==60
             page.locator('#wizard-cancel').click()
             pension.locator('.advanced-options > summary').click()
@@ -238,6 +233,18 @@ with tempfile.TemporaryDirectory(prefix='retirement-browser-data-') as data:
             page.goto(base+'/app-config.html');page.wait_for_selector('[data-dark-appearance]');page.locator('[data-dark-appearance]').check()
             page.goto(base+'/index.html');page.wait_for_function('document.documentElement.dataset.theme==="dark" && sim')
             page.screenshot(path=str(Path(tempfile.gettempdir())/'retirement-overview-dark.png'))
+            # Demo edits remain in browser storage even when opened on a Docker server.
+            demo_context=browser.new_context();demo_page=demo_context.new_page()
+            demo_page.goto(base+'/index.html');demo_page.wait_for_function('config && sim')
+            assert 'own server' in demo_page.locator('#privacy-notice').inner_text()
+            with demo_page.expect_navigation(wait_until='load'):demo_page.locator('#demo-profile').select_option('investor')
+            demo_page.wait_for_function('config && AppStorage.isDemo')
+            demo_page.evaluate('async()=>{const c=structuredClone(PlanState.get());c.assumptions.desiredMonthlyIncome=9999;await AppStorage.save(c);}')
+            assert json.load(urllib.request.urlopen(base+'/api/config'))['assumptions']['desiredMonthlyIncome']==5200
+            with demo_page.expect_navigation(wait_until='load'):demo_page.locator('#start-own-plan').click()
+            demo_page.wait_for_function('config && !AppStorage.isDemo')
+            assert demo_page.evaluate('config.assumptions.desiredMonthlyIncome')==5200
+            demo_context.close()
             # A failed Socket.IO connection still saves authoritatively through HTTP.
             fallback=browser.new_context();fallback.route('**/vendor/socket.io.min.js',lambda route:route.fulfill(content_type='text/javascript',body="window.io=()=>({once(event,cb){if(event==='connect_error')queueMicrotask(cb);return this;},on(){},close(){}});"))
             fallback_page=fallback.new_page();fallback_page.goto(base+'/index.html');fallback_page.wait_for_function('config && sim')

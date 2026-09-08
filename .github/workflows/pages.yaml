@@ -1,15 +1,9 @@
-name: Hybrid checks and GitHub Pages
+name: Hybrid validation
 
 on:
-  push:
-    branches: [main, master]
+  workflow_call:
   pull_request:
   workflow_dispatch:
-    inputs:
-      deploy:
-        description: Deploy the static calculator to GitHub Pages
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -41,13 +35,9 @@ jobs:
         env:
           BROWSER_CHANNEL: chromium
         run: |
+          python src/test/public-ux-smoke.py
           python src/test/static-smoke.py
           python src/test/dual-mode-smoke.py
-      - name: Upload static website
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist/pages
-
   docker:
     runs-on: ubuntu-latest
     steps:
@@ -75,23 +65,3 @@ jobs:
             sleep 1
           done
           curl --fail --silent -u test:ci-test http://127.0.0.1:3333/api/config | python -c 'import json,sys; assert json.load(sys.stdin)["assumptions"]["desiredMonthlyIncome"] == 4321'
-
-  deploy:
-    if: (github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'push' && vars.ENABLE_GITHUB_PAGES == 'true')
-    needs: [verify, docker]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    concurrency:
-      group: github-pages
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/configure-pages@v5
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4

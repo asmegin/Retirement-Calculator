@@ -13,7 +13,7 @@ async function openSetupWizard() {
     el('setup-frame').src='./config.html?wizard=1';el('setup-host').showModal();
   }catch(error){el('banner-text').textContent='Could not save your changes before setup: '+error.message;}
 }
-window.addEventListener('message',event=>{if(event.origin===location.origin && event.source===el('setup-frame').contentWindow && event.data?.type==='wizard-closed')el('setup-host').close();});
+window.addEventListener('message',event=>{if(event.origin===location.origin && event.source===el('setup-frame').contentWindow && event.data?.type==='wizard-closed'){el('setup-host').close();AppStorage.fetch('/api/config').then(r=>r.json()).then(receiveConfig).catch(error=>{el('banner-text').textContent=error.message;});}});
 
 const CAD = new Intl.NumberFormat('en-CA', {style:'currency', currency:'CAD', maximumFractionDigits:0});
 const fmt = v => CAD.format(isFinite(v) ? v : 0);

@@ -39,3 +39,18 @@ test('Basic Auth protects pages, runtime, API and Socket.IO while health remains
   assert.equal((await fetch(base+'/socket.io/?EIO=4&transport=polling',{headers})).status,200);
   assert.equal((await fetch(base+'/socket.io/?EIO=4&transport=polling',{headers:{...headers,Origin:'https://unrelated.example'}})).status,403);
 });
+
+test('hostile requests and storage failures do not expose internals or overwrite the plan',async t=>{
+  const {base,dir}=await launch(t),before=await fetch(base+'/api/config').then(r=>r.json());
+  const send=value=>fetch(base+'/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
+  const poisoned=structuredClone(before);poisoned.accounts=[JSON.parse('{"__proto__":{"polluted":true}}')];
+  assert.equal((await send(poisoned)).status,400);
+  const huge=structuredClone(before);huge.assumptions.targetDeathAge=1000000000;assert.equal((await send(huge)).status,400);
+  for(const file of ['../config.json','..\\config.json','/etc/passwd','config.json:secret'])assert.equal((await fetch(base+'/api/backups/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file})})).status,400);
+  assert.equal((await fetch(base+'/api/projection?strategy=__proto__')).status,400);
+  assert.deepEqual(await fetch(base+'/api/config').then(r=>r.json()),before);
+  await fs.rename(path.join(dir,'backups'),path.join(dir,'unavailable-backups'));
+  const r=await fetch(base+'/api/backup',{method:'POST'});assert.equal(r.status,500);
+  const text=await r.text();assert.ok(!text.includes(dir));assert.doesNotMatch(text,/ENOENT|server-store|\.js:\d|stack/i);
+  const runtime=await fetch(base+'/runtime-config.js').then(r=>r.text());assert.doesNotMatch(runtime,/test-password|test-user|BASIC_AUTH_PASS/);
+});

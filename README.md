@@ -46,7 +46,7 @@ The hybrid deployment changes described here are in the current source. The exis
 
 | Method | Best for | Requirements | Where the plan is saved |
 | --- | --- | --- | --- |
-| GitHub Pages / static web host | Browser-only use through a website, without running a backend | A recent browser with site storage enabled; GitHub Actions to publish | IndexedDB in each browser, isolated by site and project path |
+| GitHub Pages / static web host | Browser-only use through a website, without running a backend | A recent browser with site storage enabled; GitHub Actions to publish | localStorage in each browser, isolated by site and project path |
 | Standalone ZIP | The easiest way to use it on one computer | A recent desktop Edge or Chrome browser | Browser storage on that device |
 | Docker / Unraid | A shared household plan accessible from several devices | Docker Engine/Desktop with Compose, or Unraid | Your mounted server data directory |
 | Node.js source | Local hosting or development | Node.js 22+, npm, and the source files | The directory you set as `DATA_DIR` |
@@ -58,10 +58,10 @@ The server hosts **one shared plan**, not separate user accounts. Anyone with ac
 No Node process, API, database service, account registration, or WebSocket server is needed at runtime. Calculations and saved plans stay in the visitor's browser. The deployment artifact contains only public client files with blank household defaults.
 
 1. Push the current source and workflows to your GitHub repository.
-2. In **Settings ? Pages ? Build and deployment**, choose **GitHub Actions** as the source. Pages availability for private repositories depends on your GitHub plan. Check the site's visibility before publishing: a private source repository does not necessarily mean a private website.
-3. Open **Actions ? Hybrid checks and GitHub Pages ? Run workflow**, select the branch and enable **Deploy the static calculator to GitHub Pages**.
-4. When the checks and deployment finish, open the URL shown by the deployment, typically `https://YOUR-USERNAME.github.io/Retirement-Calculator/`.
-5. Optional: add a repository Actions variable `ENABLE_GITHUB_PAGES=true` to deploy automatically after pushes to `main`/`master`. Without this setting, ordinary pushes only build and check the Pages artifact.
+2. In **Settings - Pages - Build and deployment**, choose **GitHub Actions** as the source. Pages availability for private repositories depends on your GitHub plan. Check the site's visibility before publishing: a private source repository does not necessarily mean a private website.
+3. Push to `main`/`master`, or open **Actions - Build Docker and Standalone App - Run workflow** on that branch.
+4. After the shared checks pass, the workflow publishes multi-architecture Docker images and deploys GitHub Pages. Open the URL shown by the Pages deployment, typically `https://YOUR-USERNAME.github.io/Retirement-Calculator/`.
+5. Pages deployment now runs automatically on each push to `main`/`master`; no `ENABLE_GITHUB_PAGES` variable is needed. Configure Pages before pushing if you want the deployment job to succeed.
 
 The workflow does not change repository visibility. For the workflow permissions and environment setup, see [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 
@@ -74,7 +74,7 @@ python -m http.server 8080 --directory dist/pages
 
 Use Node.js 22+ for the build, then open **http://localhost:8080**. There are no npm dependencies for the static build. Upload the **contents of `dist/pages`** to any static host. Relative asset, navigation and worker URLs support both `/` and `/Retirement-Calculator/`; use the `.html` links. Never upload `data`, `.env` or the entire repository as the website.
 
-The status reads **Static site ? saved in this browser**. Different devices, browsers, origins and project paths have separate plans. Use Export/Import JSON to move a plan. IndexedDB storage is not encrypted and can be cleared by the browser; keep exports outside the browser. The hosted site requires a connection to load its files; the standalone ZIP is the fully offline option.
+The status reads **Static site - saved in this browser**. Different devices, browsers, origins and project paths have separate plans. Use Export/Import Plan to move a plan. Browser storage is not encrypted and can be cleared by the browser; keep exports outside the browser. The hosted site requires a connection to load its files; the standalone ZIP is the fully offline option.
 
 ## Standalone installation
 
@@ -86,7 +86,7 @@ The status reads **Static site ? saved in this browser**. Different devices, bro
 
 Keep all the extracted files together. No Node.js, Docker, server or internet connection is needed after downloading. Allow the browser to use local storage and avoid private/incognito mode for a plan you want to retain.
 
-The app should show **Saved on this device**. Your financial plan is stored by the browser, **not written into index.html or the extracted folder**. Use **Export JSON** regularly, especially before moving the folder or clearing browser data.
+The app should show **Saved on this device**. Your financial plan is stored by the browser, **not written into index.html or the extracted folder**. Use **Export Plan** regularly, especially before moving the folder or clearing browser data.
 
 The release also includes **SHA256SUMS.txt**. Optional download verification:
 
@@ -145,7 +145,7 @@ docker build -t retirement-calculator:local ./src
 docker run -d --name retirement-calculator --restart unless-stopped -p 3333:3333 -v retirement-calculator-data:/app/data retirement-calculator:local
 ```
 
-This `docker run` example uses a Docker named volume, separate from Compose's `./data` directory. Use one installation method for a given plan, or transfer the plan with Export/Import JSON.
+This `docker run` example uses a Docker named volume, separate from Compose's `./data` directory. Use one installation method for a given plan, or transfer the plan with Export/Import Plan.
 
 ## Unraid
 
@@ -203,6 +203,12 @@ Open **http://localhost:3333**. Keep the terminal running; press **Ctrl+C** to s
 
 New installations start with neutral household placeholders, no assets or properties, zero income/benefit estimates, and generic planning assumptions. Setup opens on the first visit. Enter your own information and review every assumption; saved and imported plans retain their existing values. You can reopen **Setup Wizard** from Overview or a configuration page.
 
+The first-run wizard has three steps: household ages/province/retirement targets, income and monthly or annual spending, then RRSP/TFSA/non-registered/corporate balances. **Set this up later / Skip to Dashboard** is available at every step and saves the neutral starter plan without applying an unfinished wizard draft.
+
+**Load Demo Profile** offers a fictional Canadian couple and an incorporated business owner with a rental. A prominent badge identifies demo mode. Demo plans, edits, scenarios and backups stay in a separate browser workspace?even on Docker. **Start My Own Plan** returns to your existing plan, or the first-run wizard if you have not set one up. Demo figures are illustrative, not Canadian statistical averages.
+
+On iPhone/iPad, use Safari's **Share - Add to Home Screen** to open the app in standalone mode. Apple mobile tags, PNG icons and a web manifest are included; this does not add an offline cache to a hosted site.
+
 Have your account balances, contribution room, pension estimates and property/debt details available.
 
 1. **Household:** choose one or two adults, province, names, birth years and relevant childcare information.
@@ -212,7 +218,7 @@ Have your account balances, contribution room, pension estimates and property/de
 5. **Pensions:** enter CPP/QPP and OAS estimates and start ages. Add a workplace pension only if you have one. Start with statement estimates; earnings-history mode is optional.
 6. **Properties:** add your home, rentals, mortgages and HELOCs. Review Advanced Options for payments, rental costs, ownership, selling costs and tax information.
 7. Select **Save changes** on each configuration page you edit. Check **Overview**, then run **Action plan → Check current status**.
-8. Select **Export JSON** to keep an initial backup.
+8. Select **Export Plan** to keep an initial backup.
 
 Labels show whether amounts are monthly, yearly or percentages. For an existing loan, enter its **current balance**, rate and payment. For a rental, enter **remaining UCC**, not the total depreciation already claimed. Opening contribution room should come from your own records; it is different from the account balance.
 
@@ -276,11 +282,17 @@ Use **Compare scenarios** to experiment without immediately replacing the curren
 | Run a comparison/search | Calculates a proposal without saving it. |
 | Apply a result in Action plan | Applies **and saves** the proposed plan. |
 | Use a result in Properties or Withdrawal strategy | Updates that page; **Save changes / Save plan** is still required. |
-| Import JSON | Replaces the current saved plan with the imported plan. |
+| Import Plan | Replaces the current saved plan with the imported plan. |
 
 ## Saving, backups and moving your plan
 
-**Export JSON** is the portable backup of your financial plan. Use **Import JSON** to restore it or transfer it between devices, browsers or installation methods. Scenario collections are separate from the main plan JSON; save/export any alternative you want to move as its own plan, or back up the server data directory for the complete collection.
+**Export Plan** is the portable backup of your financial plan. Use **Import Plan** to restore it or transfer it between devices, browsers or installation methods. Scenario collections are separate from the main plan JSON; save/export any alternative you want to move as its own plan, or back up the server data directory for the complete collection.
+
+Exports use a versioned JSON envelope. Enable **Encrypt backup with a password** before selecting **Export Plan** to encrypt the payload with AES-256-GCM and a password-derived key. Import Plan detects encrypted files and asks for the password; a wrong password leaves the current plan untouched. Existing raw JSON exports remain supported.
+
+Keep the password separately: there is no password recovery. Encryption requires Web Crypto, available on HTTPS, localhost and supported offline browsers. For an Unraid LAN HTTP address, use an HTTPS reverse proxy or export/import from the offline copy; the app will not silently export plaintext when encryption is requested.
+
+The eye control (**Hide figures / Show figures**) masks displayed amounts, numeric controls, table figures and charts. Its preference is saved locally. This is a discreet display setting; it does not encrypt browser storage or change exported figures.
 
 **Back up now** and **App Config → Backups** provide local/server snapshots. Up to 30 backups are retained. Restore replaces the current saved plan. Export a copy first if you also want to keep the current version.
 
@@ -295,9 +307,9 @@ data/
 
 Back up this directory independently of the container. Do not delete it when updating. Browser-only plans and backups can be lost when browser storage is cleared; keep JSON exports outside the browser.
 
-**Connected to Docker** means the app is using server storage and live synchronization. **Connected to server ? HTTP sync** means saves still go to the server, with periodic refresh when WebSockets are unavailable. **Server offline ? saves unavailable** means a save cannot be confirmed; a previously cached plan may still be viewable. Export JSON to keep unsaved edits. Server failures never switch writes to browser storage, and no unsaved changes are automatically replayed after reconnection.
+**Connected to Docker** means the app is using server storage and live synchronization. **Connected to server - HTTP sync** means saves still go to the server, with periodic refresh when WebSockets are unavailable. **Server offline - saves unavailable** means a save cannot be confirmed; a previously cached plan may still be viewable. Export Plan to keep unsaved edits. Server failures never switch writes to browser storage, and no unsaved changes are automatically replayed after reconnection.
 
-Static hosting uses atomic IndexedDB transactions for the plan, scenarios and backups, with updates between open tabs. The offline ZIP uses a shared local-storage frame. Existing browser storage is copied on first save without deleting the old keys. Server JSON filenames remain compatible. See [migration and recovery](docs/hybrid-deployment.md#upgrading-and-moving-plans) before upgrading.
+Static hosting saves the plan, scenarios and backups in one localStorage record, with Web Locks to serialize edits between supported browser tabs. Existing IndexedDB plans migrate on first save. The offline ZIP uses a shared local-storage frame. Existing browser storage is copied on first save without deleting the old keys. Server JSON filenames remain compatible. See [migration and recovery](docs/hybrid-deployment.md#upgrading-and-moving-plans) before upgrading.
 
 The server is a single household workspace: run one server process against a data directory. Concurrent saves are serialized, but the last successful whole-plan save wins. Export alternatives or use scenarios when people edit the plan independently.
 
@@ -331,7 +343,7 @@ Use a numbered image such as `1.0.0` for a fixed release. The `latest` image als
 
 For Compose, copy `.env.example` to `.env`, set the authentication variables there, and recreate the container with `docker compose up -d`. For Unraid, add container variables. A direct Node launch needs these variables in its process environment. Authentication settings are not edited inside the app. Both username and password are required when it is enabled.
 
-HTTP Basic authentication protects pages and live connections but does not encrypt traffic. Use a trusted private network or an HTTPS reverse proxy/VPN for remote access. The default server has no login requirement; it is intended for a trusted household environment. Plan exports and server data files contain financial information and are not encrypted by the app.
+HTTP Basic authentication protects pages and live connections but does not encrypt traffic. Use a trusted private network or an HTTPS reverse proxy/VPN for remote access. The default server has no login requirement; it is intended for a trusted household environment. Browser/server data files and automatic snapshots remain unencrypted. Export Plan offers optional password encryption for portable backups.
 
 ## Assumptions and limitations
 
@@ -386,12 +398,15 @@ Tests cover calculations, durable storage and HTTP/authentication. Browser check
 
 ```bash
 python -m pip install -r src/test/requirements.txt
+python src/test/public-ux-smoke.py
 python src/test/static-smoke.py
 python src/test/dual-mode-smoke.py
 ```
 
 The browser suite defaults to the installed Microsoft Edge channel. For Chromium, run `python -m playwright install chromium` and set `BROWSER_CHANNEL=chromium`. `BROWSER_CHANNEL`, `NODE_EXE` and `NODE_PATH` can override browser/runtime locations.
 
-The [hybrid workflow](.github/workflows/pages.yaml) runs Node and browser checks, verifies a non-root Docker container with persistent data, and makes Pages deployment opt-in. GitHub Actions also builds/tests the client and publishes the Docker image on pushes to `main`/`master`. A `v*` release tag must match `src/package.json`; its build publishes a versioned container and creates a GitHub Release with the standalone ZIP, checksum and `docs/releases/<tag>.md` notes. [Workflow](.github/workflows/docker-build.yaml) · [Docker metadata action](https://github.com/docker/metadata-action) · [GitHub release CLI](https://cli.github.com/manual/gh_release_create)
+The [hybrid workflow](.github/workflows/pages.yaml) runs Node and browser checks, verifies a non-root Docker container with persistent data, and gates publishing. The Docker workflow builds `linux/amd64` and `linux/arm64` images and deploys `src/public` to Pages after successful checks. GitHub Actions also builds/tests the client and publishes the Docker image on pushes to `main`/`master`. A `v*` release tag must match `src/package.json`; its build publishes a versioned container and creates a GitHub Release with the standalone ZIP, checksum and `docs/releases/<tag>.md` notes. [Workflow](.github/workflows/docker-build.yaml) · [Docker metadata action](https://github.com/docker/metadata-action) · [GitHub release CLI](https://cli.github.com/manual/gh_release_create)
 
 Third-party browser library notices are in [vendor/LICENSES.txt](src/public/vendor/LICENSES.txt).
+
+See the [security review and tested limits](docs/security-review.md) for findings and remediation.

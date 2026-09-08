@@ -188,7 +188,7 @@
       inflation: num(a.inflation, da.inflation),
       rentalIncomeInflation: num(a.rentalIncomeInflation, da.rentalIncomeInflation),
       targetDeathAge: int(a.targetDeathAge, da.targetDeathAge),
-      withdrawalStrategy: WITHDRAWAL_ORDERS[a.withdrawalStrategy] ? a.withdrawalStrategy : da.withdrawalStrategy,
+      withdrawalStrategy: Object.prototype.hasOwnProperty.call(WITHDRAWAL_ORDERS,a.withdrawalStrategy) ? a.withdrawalStrategy : da.withdrawalStrategy,
       returnMode: a.returnMode || da.returnMode,
       conservativeDelta: num(a.conservativeDelta, da.conservativeDelta),
       badDecadeDelta: num(a.badDecadeDelta, da.badDecadeDelta),

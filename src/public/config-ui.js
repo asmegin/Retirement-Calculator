@@ -154,7 +154,8 @@ function toast(msg, isErr) {
 
 
 let wizardDraft = null, wizardStep = 0;
-const wizardSteps = ['Household','Province','Ages','Income and business','Existing balances','Real estate and review'];
+const wizardSteps=['Household and retirement','Income and spending','Core savings'];
+let wizardSpendPeriod='monthly';
 function openWizard() {
   if(!config){toast('Load or import a saved plan before opening setup.',true);return;}
   wizardDraft = structuredClone(config); wizardStep = 0;
@@ -177,71 +178,53 @@ function wizardField(row, obj, f) {
   row.appendChild(field(f,obj[f.key],v => {obj[f.key]=v;if(f.key==='type')renderWizard();}));
 }
 function renderWizard() {
-  const body = el('wizard-body'); body.replaceChildren(); el('wizard-error').textContent='';
-  el('wizard-progress').textContent = `Step ${wizardStep+1} of 6: ${wizardSteps[wizardStep]}`;
-  el('wizard-back').hidden = wizardStep===0; el('wizard-next').textContent = wizardStep===5 ? 'Save setup' : 'Next';
-  const row = document.createElement('div'); row.className='item-row'; body.appendChild(row);
-  if (wizardStep===0) wizardField(row,wizardDraft.assumptions,{key:'householdType',label:'Household type',type:'select',options:['single','couple']});
-  if (wizardStep===1) wizardField(row,wizardDraft.assumptions,{key:'province',label:'Province / territory',type:'select',options:Object.keys(E.PROVINCES)});
-  if (wizardStep===2 || wizardStep===3) wizardPeople().forEach((p,i) => {
-    const section=document.createElement('div'); section.className='item-row'; const heading=document.createElement('strong'); heading.textContent=p.name; section.appendChild(heading); body.appendChild(section);
-    const fields=wizardStep===2 ? [
-      {key:'name',label:'Name',type:'text'}, {key:'birthYear',label:'Birth year',type:'number'},
-      {key:'targetRetireAge',label:'Retirement age',type:'number'}
-    ] : schema.incomes.fields.filter(f=>['salary','salaryGrowth','incorporated','eligibleDividends','nonEligibleDividends','rrspRoomOpening','tfsaRoomOpening'].includes(f.key));
-    fields.forEach(f=> {
-      if(f.key==='name') section.appendChild(field(f,p.name,v=> {
-        ['accounts','dbPensions'].forEach(key=>wizardDraft[key].forEach(a=>{if(a.owner===p.name)a.owner=v;})); p.name=v;
-      })); else wizardField(section,p,f);
+  const body=el('wizard-body');body.replaceChildren();el('wizard-error').textContent='';
+  el('wizard-progress').textContent=`Step ${wizardStep+1} of 3: ${wizardSteps[wizardStep]}`;
+  el('wizard-back').hidden=wizardStep===0;el('wizard-next').textContent=wizardStep===2?'Save setup':'Next';
+  const row=document.createElement('div');row.className='item-row';body.append(row);
+  if(wizardStep===0){
+    row.append(field({key:'householdType',label:'Household type',type:'select',options:['single','couple']},wizardDraft.assumptions.householdType,value=>{wizardDraft.assumptions.householdType=value;renderWizard();}));
+    wizardField(row,wizardDraft.assumptions,{key:'province',label:'Province / territory',type:'select',options:Object.keys(E.PROVINCES)});
+    wizardPeople().forEach(p=>{
+      const section=document.createElement('div');section.className='item-row';body.append(section);
+      section.append(field({key:'name',label:'Name',type:'text'},p.name,value=>{['accounts','dbPensions'].forEach(key=>wizardDraft[key].forEach(a=>{if(a.owner===p.name)a.owner=value;}));p.name=value;}));
+      section.append(field({key:'age',label:p.name+': current age',hint:'Your age this calendar year. Use an adult age of at least 18.',type:'number'},new Date().getFullYear()-p.birthYear,value=>p.birthYear=new Date().getFullYear()-value));
+      wizardField(section,p,{key:'targetRetireAge',label:'Target retirement age',type:'number'});
     });
-    if(wizardStep===3) {
-      const note=document.createElement('p'); note.textContent='Enter salary and actual cash dividends separately. Salary creates RRSP room and CPP/QPP costs. Dividends shown here come from business earnings outside the investment accounts; CORP withdrawals are calculated separately.'; body.appendChild(note);
-    }
-  });
-  if (wizardStep===4 || wizardStep===5) {
-    const cat=wizardStep===4?'accounts':'realEstate';
-    const keys=wizardStep===4 ? ['name','owner','type','balance','costBasis','growthRate','corporateTaxRate'] : ['name','type','value','mortgage','interestRate','paymentMonthly','grossRentMonthly','vacancyRate','uccPool','ccaEnabled'];
-    const note=document.createElement('p'); note.textContent=wizardStep===4 ? 'Add each existing RRSP, TFSA, FHSA, taxable, corporate, or DC account. For an existing FHSA, update its opening year, unused room and lifetime contributions below.' : 'Add each property or debt. You can set sale dates, ownership and attached rental debt in Configure after setup. Saving applies this household, province, people and balances.'; body.appendChild(note);
-    wizardDraft[cat].forEach((obj,i)=> {
-      if(cat==='accounts' && !wizardPeople().some(p=>p.name===obj.owner) && obj.owner!=='Joint') return;
-      const section=document.createElement('div'); section.className='item-row'; body.appendChild(section);
-      const more=document.createElement('div');more.className='item-row';
-      schema[cat].fields.filter(f=>keys.includes(f.key)).filter(f=>!f.accountTypes||f.accountTypes.includes(obj.type)).forEach(f=>wizardField(['name','owner','type','balance','value','mortgage'].includes(f.key)?section:more,obj,f));
-      if(more.children.length)section.append(advanced(more));
-      const remove=document.createElement('button'); remove.className='btn danger';remove.textContent='Remove'; remove.onclick=()=>{wizardDraft[cat].splice(i,1);renderWizard();};section.appendChild(remove);
+  }else if(wizardStep===1){
+    row.append(field({key:'spendPeriod',label:'Spending period',hint:'Choose monthly or annual amounts. The saved plan uses a monthly spending goal.',type:'select',options:['monthly','annual']},wizardSpendPeriod,value=>{wizardSpendPeriod=value;renderWizard();}));
+    row.append(field({key:'spendAmount',label:'Target after-tax retirement spending',hint:'Household spending after tax in today’s Canadian dollars, for the selected period.',type:'number'},wizardDraft.assumptions.desiredMonthlyIncome*(wizardSpendPeriod==='annual'?12:1),value=>wizardDraft.assumptions.desiredMonthlyIncome=value/(wizardSpendPeriod==='annual'?12:1)));
+    wizardPeople().forEach(p=>wizardField(row,p,{key:'salary',label:p.name+': current gross annual income',type:'number'}));
+    const note=document.createElement('p');note.textContent='Enter gross employment income for each adult; together these amounts make up household income. Add business dividends, pension estimates and detailed spending assumptions in Configuration after setup.';body.append(note);
+  }else{
+    const note=document.createElement('p');note.textContent='Enter current balances in Canadian dollars. Add contribution room, tax cost basis, property details and pension estimates in Configuration after setup.';body.append(note);
+    wizardPeople().forEach(p=>{
+      const section=document.createElement('div');section.className='item-row';const title=document.createElement('strong');title.textContent=p.name;section.append(title);body.append(section);
+      for(const [type,label] of [['RRSP','RRSP'],['TFSA','TFSA'],['TAXABLE','Non-registered'],['CORP','Corporate']]){
+        const accounts=wizardDraft.accounts.filter(a=>a.owner===p.name&&a.type===type);
+        if(!accounts.length){const a={name:label,owner:p.name,type,balance:0,growthRate:4,wizardPlaceholder:true};wizardDraft.accounts.push(a);accounts.push(a);}
+        accounts.forEach(a=>section.append(field({key:'balance',label:label+' balance'+(accounts.length>1?' ? '+a.name:''),type:'number'},a.balance,value=>a.balance=value)));
+      }
     });
-    const add=document.createElement('button');add.className='btn ghost';add.textContent=wizardStep===4?'Add account':'Add property / debt';
-    add.onclick=()=>{wizardDraft[cat].push(wizardStep===4 ? {name:'Account',owner:wizardPeople()[0].name,type:'TFSA',balance:0,growthRate:5} : {name:'Property '+(wizardDraft[cat].length+1),type:'principal',value:0,mortgage:0,interestRate:4,paymentMonthly:0,grossRentMonthly:0});renderWizard();};body.appendChild(add);
-    if(wizardStep===4&&wizardDraft.accounts.some(a=>a.type==='FHSA'&&a.enabled!==false)) wizardPeople().forEach(p=>{
-      const section=document.createElement('div');section.className='item-row';const title=document.createElement('strong');title.textContent=p.name+' FHSA history';section.appendChild(title);body.appendChild(section);
-      schema.incomes.fields.filter(f=>f.key.startsWith('fhsa')).forEach(f=>wizardField(section,p,f));
-    });
-    if(wizardStep===5) {
-      const heading=document.createElement('h3'); heading.textContent='Pensions (optional)';body.appendChild(heading);
-      wizardDraft.dbPensions.forEach(plan=>{
-        const section=document.createElement('div');section.className='item-row';body.appendChild(section);
-        const more=document.createElement('div');more.className='item-row';
-        pensionFields(plan,wizardPeople(),section,more);section.append(advanced(more));
-        const remove=document.createElement('button');remove.className='btn danger';remove.textContent='Remove pension';remove.onclick=()=>{wizardDraft.dbPensions.splice(wizardDraft.dbPensions.indexOf(plan),1);renderWizard();};section.appendChild(remove);
-      });
-      const addPension=document.createElement('button');addPension.className='btn ghost';addPension.textContent='Add pension';addPension.onclick=()=>{wizardDraft.dbPensions.push(newPension(wizardPeople()[0].name));renderWizard();};body.appendChild(addPension);
-      const review=document.createElement('p');review.textContent=`${wizardDraft.assumptions.householdType} | ${E.PROVINCES[wizardDraft.assumptions.province].name} | ${wizardPeople().map(p=>p.name+' (born '+p.birthYear+')').join(', ')} | ${wizardDraft.accounts.length} accounts`;body.appendChild(review);
-    }
   }
+}
+async function skipWizard(){
+  el('wizard-skip').disabled=true;
+  try{const saved=await AppStorage.save(config);receiveSettings(saved);closeWizard();if(window.parent===window)location.href='./index.html';}
+  catch(error){el('wizard-error').textContent=error.message;}
+  finally{el('wizard-skip').disabled=false;}
 }
 async function wizardMove(direction) {
   if(direction<0){wizardStep--;renderWizard();return;}
-  if(wizardPeople().some(p=>!p.name.trim() || !Number.isFinite(+p.birthYear) || +p.birthYear<1900 || +p.birthYear>new Date().getFullYear()-18)) {el('wizard-error').textContent='Enter a name and a valid adult birth year for each person.';return;}
-  if(wizardPeople().length===2 && wizardPeople()[0].name===wizardPeople()[1].name){el('wizard-error').textContent='Use distinct names so account ownership stays unambiguous.';return;}
-  if(wizardStep<5){wizardStep++;renderWizard();return;}
+  if(wizardPeople().some(p=>!p.name.trim()||!Number.isFinite(+p.birthYear)||p.birthYear<1900||p.birthYear>new Date().getFullYear()-18||!Number.isFinite(p.targetRetireAge)||p.targetRetireAge<18||p.targetRetireAge>100)){el('wizard-error').textContent='Enter adult ages, names and retirement ages between 18 and 100.';return;}
+  if(wizardPeople().length===2&&wizardPeople()[0].name===wizardPeople()[1].name){el('wizard-error').textContent='Use distinct names so account ownership stays unambiguous.';return;}
+  if(wizardDraft.assumptions.desiredMonthlyIncome<0||wizardPeople().some(p=>p.salary<0)||wizardDraft.accounts.some(a=>a.balance<0)){el('wizard-error').textContent='Income, spending and savings balances cannot be negative.';return;}
+  if(wizardStep<2){wizardStep++;renderWizard();return;}
   el('wizard-next').disabled=true;
-  try {
-    wizardDraft.onboardingComplete=true;
-    const normalized=E.normalizeConfig(wizardDraft);E.simulate(normalized);
-    const res=await AppStorage.fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(normalized)});
-    const data=await res.json();if(!res.ok)throw new Error(data.error || 'Could not save setup');
-    config=data.config;settingsDirty=false;el('settings-save-status').textContent='All changes saved';render();closeWizard();toast('Setup saved');
-  } catch(err){el('wizard-error').textContent=err.message;}
+  try{
+    wizardDraft.accounts=wizardDraft.accounts.filter(a=>!a.wizardPlaceholder||a.balance>0);wizardDraft.accounts.forEach(a=>delete a.wizardPlaceholder);
+    const saved=await AppStorage.save(wizardDraft);receiveSettings(saved);closeWizard();toast('Setup saved');
+  }catch(error){el('wizard-error').textContent=error.message;}
   finally{el('wizard-next').disabled=false;}
 }
 
@@ -522,28 +505,11 @@ async function save() {
   finally{button.disabled=false;}
 }
 
-function exportConfig() {
-  const blob = new Blob([JSON.stringify(config, null, 2)], {type:'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'retirement-config-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.json';
-  a.click(); URL.revokeObjectURL(a.href);
-}
-
-function importConfig(evt) {
-  const file = evt.target.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async () => {
-    try {
-      const parsed = JSON.parse(reader.result);
-      const res = await AppStorage.fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(parsed)});
-      const body = await res.json();
-      if (!body.success) throw new Error(body.error || 'rejected');
-      config = body.config; render(); loadBackups(); toast('Configuration imported');
-    } catch (e) { toast('That file is not a valid configuration', true); }
-    evt.target.value = '';
-  };
-  reader.readAsText(file);
+async function exportConfig(){try{await PlanBackupUI.export(config,document.getElementById('encrypt-backup').checked);}catch(error){toast(error.message,true);}}
+async function importConfig(evt){
+  const file=evt.target.files[0];if(!file)return;
+  try{const parsed=await PlanBackupUI.read(file);if(!parsed)return;receiveSettings(await AppStorage.save(parsed));loadBackups();toast('Configuration imported');}
+  catch(error){toast(error.message,true);}finally{evt.target.value='';}
 }
 
 async function backupNow() {

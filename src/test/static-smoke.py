@@ -68,14 +68,14 @@ with tempfile.TemporaryDirectory(prefix='retirement-static-') as directory:
             page.reload();page.wait_for_function('window.PlanState && PlanState.get()?.assumptions.desiredMonthlyIncome===3300')
             assert page.evaluate('async()=>(await BrowserPlanStore.listScenarios())[0].name') == 'Baseline'
             with page.expect_download() as download:page.locator('#export-json').click()
-            assert json.loads(Path(download.value.path()).read_text())['assumptions']['desiredMonthlyIncome'] == 3300
+            assert json.loads(Path(download.value.path()).read_text())['data']['assumptions']['desiredMonthlyIncome'] == 3300
             # Atomic browser writes preserve the saved plan on quota failure.
             outcome = page.evaluate('''async()=>{
-              const original=IDBObjectStore.prototype.put,before=JSON.stringify(await BrowserPlanStore.readConfig());
-              IDBObjectStore.prototype.put=function(){throw new DOMException('Quota exhausted','QuotaExceededError');};
+              const original=Storage.prototype.setItem,before=JSON.stringify(await BrowserPlanStore.readConfig());
+              Storage.prototype.setItem=function(){throw new DOMException('Quota exhausted','QuotaExceededError');};
               try{const c=structuredClone(PlanState.get());c.assumptions.desiredMonthlyIncome=9999;
                 try{await AppStorage.save(c);return {failed:false};}catch(error){return {failed:true,message:error.message,unchanged:before===JSON.stringify(await BrowserPlanStore.readConfig())};}
-              }finally{IDBObjectStore.prototype.put=original;}
+              }finally{Storage.prototype.setItem=original;}
             }''')
             assert outcome['failed'] and outcome['unchanged'], outcome
             assert 'storage' in outcome['message'].lower()
@@ -107,6 +107,15 @@ with tempfile.TemporaryDirectory(prefix='retirement-static-') as directory:
             assert legacy_page.evaluate('JSON.parse(localStorage.getItem("retirement-config-v1")).assumptions.desiredMonthlyIncome') == 3200
             assert legacy_page.evaluate('async()=>(await BrowserPlanStore.listScenarios())[0].name') == 'Legacy'
             legacy.close()
+            # Plans from the earlier IndexedDB build migrate into localStorage without data loss.
+            migration=browser.new_context();migrating=migration.new_page();migrating.goto(project+'/runtime-config.js')
+            migrating.evaluate('''async c=>{const scope='retirement-'+encodeURIComponent('/Retirement-Calculator/');await new Promise((resolve,reject)=>{const r=indexedDB.open(scope,1);r.onupgradeneeded=()=>r.result.createObjectStore('state');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,tx=db.transaction('state','readwrite');tx.objectStore('state').put({schemaVersion:2,config:c,scenarios:[{name:'Database plan',config:c}],backups:[]},'plan');tx.oncomplete=()=>{db.close();resolve();};};});}''',fixture)
+            loaded(migrating,project+'/index.html')
+            assert migrating.evaluate('PlanState.get().assumptions.desiredMonthlyIncome')==3200
+            migrating.evaluate('()=>AppStorage.save(PlanState.get())')
+            assert migrating.evaluate('JSON.parse(localStorage.getItem(BrowserPlanStore.stateKey)).config.assumptions.desiredMonthlyIncome')==3200
+            assert migrating.evaluate('async()=>(await BrowserPlanStore.listScenarios())[0].name')=='Database plan'
+            migration.close()
             assert not errors, errors
             assert not failures, failures
             assert not sockets, sockets

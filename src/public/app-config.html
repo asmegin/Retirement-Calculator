@@ -1,8 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Canada Retirement">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#5256c9">
+<link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png">
+<link rel="manifest" href="./manifest.webmanifest">
+
 <meta charset="UTF-8">
-<script src="./runtime-config.js"></script><script src="./theme.js"></script><script src="./plan-schema.js"></script><script src="./browser-store.js"></script><script src="./storage.js"></script><script src="./worker-bundle.js"></script><script src="./workers.js"></script>
+<script src="./runtime-config.js"></script><script src="./theme.js"></script><script src="./privacy.js"></script><script src="./plan-schema.js"></script><script src="./backup-crypto.js"></script><script src="./backup-ui.js"></script><script src="./browser-store.js"></script><script src="./storage.js"></script><script src="./demo-profiles.js"></script><script src="./worker-bundle.js"></script><script src="./workers.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>App Config · Retirement</title>
 <style>
@@ -56,6 +64,7 @@
   <h2 id="wizard-title">Setup Wizard</h2><p id="wizard-progress"></p>
   <div id="wizard-body"></div><p id="wizard-error" role="alert" style="color:#fca5a5"></p>
   <div style="display:flex;gap:.6rem;justify-content:flex-end;flex-wrap:wrap">
+    <button class="btn ghost" id="wizard-skip" onclick="skipWizard()">Set this up later / Skip to Dashboard</button>
     <button class="btn ghost" id="wizard-cancel" onclick="closeWizard()">Cancel</button>
     <button class="btn ghost" id="wizard-back" onclick="wizardMove(-1)">Back</button>
     <button class="btn" id="wizard-next" onclick="wizardMove(1)">Next</button>

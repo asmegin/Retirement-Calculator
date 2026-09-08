@@ -24,6 +24,7 @@ const server = http.createServer(app);
 function sameOrigin(req){try{return !req.headers.origin||new URL(req.headers.origin).host===req.headers.host;}catch(_){return false;}}
 const io = new Server(server,{allowRequest:(req,callback)=>callback(null,sameOrigin(req))});
 app.disable('x-powered-by');
+app.set('query parser','simple');
 app.use((req,res,next)=>{res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','X-Frame-Options':'SAMEORIGIN'});next();});
 app.get('/healthz',(req,res)=>res.status(ready?200:503).json({ok:ready}));
 
@@ -66,39 +67,39 @@ const loadScenarios=()=>store.listScenarios();
 
 /* --------------------------------------------------------------- routes  */
 app.get('/api/system',(req,res)=>res.json({mode:'server',authEnabled,authManagedByEnvironment:true,port:PORT,version}));
-app.get('/api/config', async (req, res) => {
+app.get('/api/config', async (req, res, next) => {
   try { res.json(await loadConfig()); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  catch (err) { next(err); }
 });
 
-app.post('/api/config', async (req, res) => {
+app.post('/api/config', async (req, res, next) => {
   try {
     const config = await saveConfig(req.body);
     res.json({ success: true, config });
   } catch (err) {
     console.error('Rejected config:', err.message);
-    res.status(400).json({ success: false, error: 'Configuration is not valid: ' + err.message });
+    next(err);
   }
 });
 
-app.post('/api/backup', async (req, res) => {
+app.post('/api/backup', async (req, res, next) => {
   try {
     const file = await backup('manual');
     res.json({ ok: !!file, file });
-  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+  } catch (err) { next(err); }
 });
 
 app.get('/api/backups',async(req,res,next)=>{try{res.json(await store.listBackups());}catch(e){next(e);}});
-app.post('/api/backups/restore',async(req,res)=>{try{const config=await store.restore(req.body.file);io.emit('config_updated',config);res.json({ok:true,config});}catch(e){res.status(400).json({ok:false,error:e.message});}});
+app.post('/api/backups/restore',async(req,res,next)=>{try{const config=await store.restore(req.body.file);io.emit('config_updated',config);res.json({ok:true,config});}catch(e){next(e);}});
 app.get('/api/scenarios',async(req,res,next)=>{try{res.json(await loadScenarios());}catch(e){next(e);}});
-app.post('/api/scenarios',async(req,res)=>{try{res.json({ok:true,scenarios:await store.saveScenario(req.body.name,req.body.config)});}catch(e){res.status(400).json({ok:false,error:e.message});}});
+app.post('/api/scenarios',async(req,res,next)=>{try{res.json({ok:true,scenarios:await store.saveScenario(req.body.name,req.body.config)});}catch(e){next(e);}});
 app.delete('/api/scenarios/:name',async(req,res,next)=>{try{res.json({ok:true,scenarios:await store.deleteScenario(req.params.name)});}catch(e){next(e);}});
 
 /* Server-side projection, handy for scripting or a future export job. */
-app.get('/api/projection', async (req, res) => {
+app.get('/api/projection', async (req, res, next) => {
   try {
     const config = await loadConfig();
-    if (req.query.strategy) {config.assumptions.withdrawalStrategy = req.query.strategy;delete config.assumptions.withdrawalPlan;}
+    if (req.query.strategy) {if(typeof req.query.strategy!=='string'||!['tfsa-first','rrsp-first','taxable-first','min-tax','oas-smart'].includes(req.query.strategy))return res.status(400).json({error:'Unknown withdrawal strategy.'});config.assumptions.withdrawalStrategy = req.query.strategy;delete config.assumptions.withdrawalPlan;}
     const sim = Engine.simulate(config);
     res.json({
       depletedYear: sim.depletedYear,
@@ -118,7 +119,7 @@ app.get('/api/projection', async (req, res) => {
         netWorth: Math.round(r.netWorth)
       }))
     });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { next(err); }
 });
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
@@ -134,9 +135,9 @@ io.on('connection', async socket => {
 app.use('/api',(req,res)=>res.status(404).json({error:'Unknown API endpoint.'}));
 app.use((error,req,res,next)=>{
   if(res.headersSent)return next(error);
-  const status=error.status===413?413:error instanceof SyntaxError?400:500;
+  const status=error.status===413?413:error.code==='PLAN_VALIDATION'||error.type==='entity.parse.failed'?400:500;
   console.error('Request failed:',error.message);
-  res.status(status).json({ok:false,error:status===413?'Request exceeds the 2 MB limit.':status===400?'Invalid JSON request.':'Server storage could not complete the request. Check server logs.'});
+  res.status(status).json({ok:false,error:status===413?'Request exceeds the 2 MB limit.':status===400?(error.code==='PLAN_VALIDATION'?error.message:'Invalid JSON request.'):'Server storage could not complete the request. Check server logs.'});
 });
 store.init().then(()=>{ready=true;server.listen(PORT,BIND,()=>console.log(`Retirement Calculator ${version} listening on ${BIND}:${PORT}`));}).catch(error=>{console.error('Startup failed:',error.message);process.exitCode=1;});
 let stopping=false;
