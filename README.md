@@ -1,6 +1,6 @@
-# Retirement Calculator
+# Retirement Calculator for Canada
 
-A Canadian retirement planning app for one adult or a couple. Explore when you can retire, how much you can spend after tax, which accounts to withdraw from, and when to sell a rental property.
+A retirement calculator built for **Canada**, for one adult or a couple. Plan with Canadian tax estimates, CPP/QPP, OAS, RRSP/RRIF and TFSA accounts. Explore when you can retire, how much you can spend after tax, which accounts to withdraw from, and when to sell a rental property.
 
 Run it **offline in your browser**, **on Docker/Unraid**, or **locally with Node.js**. No subscription or external financial account connection is required.
 
