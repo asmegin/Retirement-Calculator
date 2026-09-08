@@ -4,11 +4,11 @@ A retirement calculator built for **Canada**, for one adult or a couple. Plan wi
 
 Run it as a **completely static site on GitHub Pages**, **on Docker/Unraid**, **offline from a ZIP**, or **locally with Node.js**. No subscription or external financial account connection is required.
 
-**Latest tagged release: 1.0.0** · [Download the standalone app](https://github.com/asmegin/Retirement-Calculator/releases/latest/download/retirement-calculator-standalone.zip) · [Releases](https://github.com/asmegin/Retirement-Calculator/releases) · [Version 1.0 release notes](docs/releases/v1.0.0.md)
+**Latest tagged release: 1.0.2** · [Download the standalone app](https://github.com/asmegin/Retirement-Calculator/releases/latest/download/retirement-calculator-standalone.zip) · [Releases](https://github.com/asmegin/Retirement-Calculator/releases) · [Version 1.0.2 release notes](docs/releases/v1.0.2.md)
 
 If the repository is private, sign in to GitHub with an account that has access before opening these downloads.
 
-**Release candidate: 1.01 (`v1.0.1`)** - [Changes and upgrade notes](docs/releases/v1.0.1.md). The draft is unpublished; the latest published release remains 1.0.0. Build this checkout to try the candidate. See the [hybrid deployment guide](docs/hybrid-deployment.md).
+**Current release: 1.0.2 (`v1.0.2`)** - [Changes and upgrade notes](docs/releases/v1.0.2.md). Download the [latest release](https://github.com/asmegin/Retirement-Calculator/releases/latest) or see the [hybrid deployment guide](docs/hybrid-deployment.md).
 
 ## Contents
 
@@ -124,7 +124,7 @@ docker compose up -d --build
 
 Open **http://localhost:3333**, or **http://YOUR-SERVER-IP:3333** from another device on your network.
 
-The included [compose.yaml](compose.yaml) can build this checkout or use `ghcr.io/asmegin/retirement-calculator:${APP_VERSION}`. The command above builds the current source as `1.0.1`. Its registry image will be available after the release tag build succeeds; pulling `1.0.0` retrieves the original release. The container restarts automatically and stores the shared plan and backups in `./data`. Keep that directory when updating or replacing the container.
+The included [compose.yaml](compose.yaml) can build this checkout or use `ghcr.io/asmegin/retirement-calculator:${APP_VERSION}`. The command above builds the current source as `1.0.2`. To use the published image instead, run `docker compose pull` followed by `docker compose up -d --no-build`. The container restarts automatically and stores the shared plan and backups in `./data`. Keep that directory when updating or replacing the container.
 
 Useful commands, run from the same directory:
 
@@ -154,7 +154,7 @@ In **Docker → Add Container**, use:
 | Setting | Value |
 | --- | --- |
 | Name | `retirement-calculator` |
-| Repository | `ghcr.io/asmegin/retirement-calculator:1.0.1` after the release build, or `retirement-calculator:local` for the draft |
+| Repository | `ghcr.io/asmegin/retirement-calculator:1.0.2` |
 | Network type | `Bridge` |
 | Container port | `3333` / TCP |
 | Host port | `3333`, or another unused port |
