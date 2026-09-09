@@ -17,13 +17,16 @@
     }
     return PlanSchema.validate(c);
   }
-  root.DemoProfiles={create};
-  document.addEventListener('DOMContentLoaded',()=>{
-    const bar=document.querySelector('.settings-bar');
+  function mount(container,status){
     const label=document.createElement('label');label.textContent='Load Demo Profile ';
     const select=document.createElement('select');select.id='demo-profile';select.setAttribute('aria-label','Load Demo Profile');
-    for(const [value,text] of [['','Choose an example…'],['couple','Profile A: Canadian couple'],['investor','Profile B: Business owner / rental investor']]){const option=document.createElement('option');option.value=value;option.textContent=text;select.append(option);}label.append(select);bar.append(label);
-    select.onchange=async()=>{if(!select.value)return;select.disabled=true;try{await AppStorage.loadDemo(create(select.value));location.href='./index.html';}catch(e){document.getElementById('file-status').textContent=e.message;select.disabled=false;}};
+    for(const [value,text] of [['','Choose an example…'],['couple','Profile A: Canadian couple'],['investor','Profile B: Business owner / rental investor']]){const option=document.createElement('option');option.value=value;option.textContent=text;select.append(option);}label.append(select);container.append(label);
+    select.onchange=async()=>{if(!select.value)return;select.disabled=true;try{await AppStorage.loadDemo(create(select.value));location.href='./index.html';}catch(e){const target=status||document.getElementById('file-status');if(target)target.textContent=e.message;select.disabled=false;}};
+    return label;
+  }
+  root.DemoProfiles={create,mount};
+  document.addEventListener('DOMContentLoaded',()=>{
+    const bar=document.querySelector('.settings-bar');
     const badge=document.createElement('div');badge.id='demo-badge';badge.className='demo-badge';badge.hidden=true;
     const text=document.createElement('strong');text.textContent='Demo profile · fictional figures';const start=document.createElement('button');start.className='btn';start.id='start-own-plan';start.textContent='Start My Own Plan';
     start.onclick=async()=>{try{await AppStorage.leaveDemo();location.href='./index.html';}catch(e){document.getElementById('file-status').textContent=e.message;}};badge.append(text,start);bar.after(badge);

@@ -62,7 +62,7 @@ Switching between Docker and Pages is deliberate: export on the source installat
 
 Server mode is fixed by `/runtime-config.js`. An API or WebSocket failure never changes the persistence destination. Without WebSockets, HTTP saves continue and background refresh provides synchronization. Without the API, the interface reports **Server offline · saves unavailable** and may display the last confirmed cached plan. A failed request can be ambiguous if its response was lost after a successful disk write; reconnect and inspect the saved plan before applying an alternative.
 
-Export Plan preserves the edits currently in a page. Failed saves are not queued for automatic replay. Reload or reopen after reconnecting; import an exported alternative only when you intend to replace the saved plan. A failed initial load without a cache displays an error, not a newly saved household.
+Keep the current page open when a save fails, reconnect, and save your edits before navigating or reloading. Failed saves are not queued for automatic replay. **App Config → Plan file and display → Export Plan** exports the saved plan loaded into App Config; it does not include unsaved edits on another page. Import an exported alternative only when you intend to replace the saved plan. A failed initial load without a cache displays an error, not a newly saved household.
 
 ## Code map and verification
 

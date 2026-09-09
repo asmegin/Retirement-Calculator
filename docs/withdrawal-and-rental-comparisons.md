@@ -26,6 +26,8 @@ The model assumes established personally owned long-term rentals with a separate
 
 ## Review and verification
 
+Rental setup errors name the property, field labels and entered amounts (or the sale and comparison years), then link to **Configuration → Properties**. Open that property's **Advanced options** to correct the fields using your records. Validation checks a positive total ACB, building cost no greater than ACB, remaining UCC no greater than building cost, and a sale year of 0 or at least the comparison's first year. These checks reflect this calculator's separate-building-pool model; the link opens the Properties page, not an individual record. The same messages and link work with hosted and offline workers.
+
 The review covered calculation paths, worker parity, configuration and scenario storage, API validation, navigation/resources, responsive layouts and the main browser workflows. Corrections include:
 
 - Keeping the saved withdrawal schedule in the optimization baseline and fallback.

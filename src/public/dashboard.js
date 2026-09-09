@@ -162,8 +162,18 @@ Chart.register({
       ctx.save();
       ctx.beginPath(); ctx.moveTo(px, y.top); ctx.lineTo(px, y.bottom);
       ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(239,68,68,.75)'; ctx.setLineDash([4,4]); ctx.stroke();
-      ctx.fillStyle = '#ef4444'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'right';
-      ctx.fillText(s.name + ' paid off (' + s.actualPayoff + ')', px - 6, y.top + 18 + i*16);
+      // Keep the label inside the plot area: prefer the left of the marker, flip when there is no room.
+      const suffix = ' paid off (' + s.actualPayoff + ')',available = x.right - x.left;
+      const narrow = available < 420;
+      ctx.fillStyle = '#ef4444'; ctx.font = 'bold ' + (narrow ? 10 : 11) + 'px system-ui'; ctx.textAlign = 'left';
+      let name = s.name, label = name + suffix;
+      while (name.length && ctx.measureText(label).width > available) {
+        name = name.slice(0, -1); label = name + '…' + suffix;
+      }
+      const width = ctx.measureText(label).width;
+      let tx = px - 6 - width;
+      if (tx < x.left) tx = Math.min(px + 6, x.right - width);
+      if (available > 0) ctx.fillText(label, Math.max(x.left, tx), y.top + 16 + i*(narrow ? 14 : 16), available);
       ctx.restore();
     });
   }

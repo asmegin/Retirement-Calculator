@@ -133,16 +133,21 @@
         [['CRA rental income guide','https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/t4036/rental-income.html'],['Capital gains increase cancelled','https://www.pm.gc.ca/en/news/news-releases/2025/03/21/prime-minister-mark-carney-cancels-proposed-capital-gains-tax-increase']].forEach(([title,url])=>{const p=el('p'),a=el('a',title);a.href=url;a.target='_blank';a.rel='noopener noreferrer';p.append(a);notes.append(p);});output.append(notes);
       }
     }
+    // Setup problems name the property and the fields to correct, and link to the page that holds them.
+    function showFailure(message,fix){
+      status.replaceChildren(document.createTextNode(message));
+      if(fix==='properties'){const link=el('a','Open Properties');link.href='./properties.html';status.append(' ',link);}
+    }
     run.onclick=()=>{
       if(rental&&!selectedIndices().length){status.textContent='Select at least one rental property to compare.';return;}
       stop();const id=revision;snapshot=copy(getConfig());source=key(snapshot);run.disabled=true;cancel.hidden=false;output.replaceChildren();status.textContent='Comparing full household projections…';section.setAttribute('aria-busy','true');
       try{
         worker=AppWorkers.create('comparison');
-        const fail=message=>{stop();status.textContent=message;};
+        const fail=(message,fix)=>{stop();showFailure(message,fix);};
         worker.onerror=()=>{if(id===revision)fail('Comparison failed. Try again.');};
-        worker.onmessage=({data})=>{if(id!==revision||data.id!==id)return;if(!section.isConnected){stop();return;}if(key(getConfig())!==source){invalidate();return;}if(data.error){fail(data.error);return;}if(data.progress){status.textContent='Compared '+data.progress.evaluated+(data.progress.maxEvaluations?' of '+data.progress.maxEvaluations:'')+' options.';return;}stop();show(data.result);};
+        worker.onmessage=({data})=>{if(id!==revision||data.id!==id)return;if(!section.isConnected){stop();return;}if(key(getConfig())!==source){invalidate();return;}if(data.error){fail(data.error,data.fix);return;}if(data.progress){status.textContent='Compared '+data.progress.evaluated+(data.progress.maxEvaluations?' of '+data.progress.maxEvaluations:'')+' options.';return;}stop();show(data.result);};
         worker.postMessage({id,task,config:snapshot,propertyIndices:selectedIndices(),compareCCA:cca.checked});
-      }catch(error){stop();status.textContent=error.message;}
+      }catch(error){stop();showFailure(error.message,error.fix);}
     };
     window.addEventListener('pagehide',stop,{once:true});
     return {run:()=>run.click(),invalidate};

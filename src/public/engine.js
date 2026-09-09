@@ -1788,6 +1788,18 @@
     row.wealthAtMaxSpend={tax:totalTax(r),estate:r.finalNetWorthReal,benefits:r.lifetimeBenefits,funded:isFunded(r),endYear:r.endYear};
   }
 
+  function propertyMoney(value){return Number(value||0).toLocaleString('en-CA',{style:'currency',currency:'CAD',minimumFractionDigits:0,maximumFractionDigits:2});}
+  // These rental fields all live under Advanced options, so every message says where to go.
+  function costBasisError(message){var error=new Error(message+' These fields are on the Configuration › Properties page, under Advanced options.');error.fix='properties';return error;}
+  // The sale calculation splits the price into land and building, then recaptures past CCA
+  // against the building. Those three amounts have to nest: UCC <= building cost <= ACB.
+  function checkRentalCostBasis(property){
+    var name=property.name||'This rental',acb=Number(property.acb)||0,building=Number(property.buildingAcb)||0,ucc=Number(property.uccPool)||0;
+    if(acb<=0)throw costBasisError(name+': “ACB (price + improvements)” is '+propertyMoney(acb)+'. Enter what you paid for the property plus improvements, so the taxable gain on a sale can be worked out.');
+    if(building>acb)throw costBasisError(name+': “Building cost excluding land” is '+propertyMoney(building)+', which is more than the “ACB (price + improvements)” of '+propertyMoney(acb)+'. The ACB covers the land and the building together, so the building cost must be no more than the ACB. Check your records and correct the building cost or ACB.');
+    if(ucc>building)throw costBasisError(name+': “CCA pool remaining (UCC)” is '+propertyMoney(ucc)+', which is more than the “Building cost excluding land” of '+propertyMoney(building)+'. This comparison models a separate building CCA pool for each rental, with remaining UCC no greater than its building cost. Check your records and correct the UCC or building cost.');
+  }
+
   function compareRentalSales(cfg,opts){
     opts=opts||{};cfg=normalizeConfig(cfg);
     var indices=Array.isArray(opts.propertyIndices)&&opts.propertyIndices.length?opts.propertyIndices.map(function(i){return int(i,-1);}):[int(opts.propertyIndex,-1)];
@@ -1796,8 +1808,8 @@
     var properties=indices.map(function(idx){return cfg.realEstate[idx];});
     properties.forEach(function(property){
       if(!property||property.type!=='rental')throw new Error('Choose a rental property first.');
-      if(property.saleYear&&property.saleYear<start)throw new Error('This rental has a past sale year. Update Properties to describe what you own today.');
-      if(property.acb<=0||property.buildingAcb>property.acb||property.uccPool>property.buildingAcb)throw new Error('Check total cost, building cost and remaining UCC under Properties. UCC must not exceed building cost, and building cost must not exceed total cost.');
+      if(property.saleYear&&property.saleYear<start)throw costBasisError((property.name||'This rental')+': the sale year is set to '+property.saleYear+', which is before '+start+', the first year of this comparison. Set “Sale year (0 = never)” to 0 or to '+start+' or later so the comparison starts from what you own today.');
+      checkRentalCostBasis(property);
     });
     if(cfg.assumptions.spendingMode==='categories'&&Planning.spendingBaseline(cfg.assumptions.spendingCategories)<=0)throw new Error('Add a positive spending category before comparing retirement spending.');
     // Spending must reproduce the plan after Apply, including its estate settings.
