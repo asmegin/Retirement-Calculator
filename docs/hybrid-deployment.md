@@ -4,7 +4,7 @@ The same Canadian retirement engine and interface run in three environments. Thi
 
 | Environment | Runtime | Saved plan | Synchronization |
 | --- | --- | --- | --- |
-| GitHub Pages or another static host | HTML, CSS and JavaScript only | localStorage in the visitor's browser | BroadcastChannel between tabs on the same origin/project |
+| GitHub Pages or another static host | HTML, CSS and JavaScript only | IndexedDB in the visitor's browser | BroadcastChannel between tabs on the same origin/project |
 | Docker / Unraid / Node.js | Node.js 22, Express and Socket.IO | `DATA_DIR/config.json`, `scenarios.json`, `backups/` | Socket.IO; HTTP refresh every 15 seconds when live sync is unavailable |
 | Extracted offline ZIP | Local `file:` pages | Browser local storage through `storage.html` | Shared storage across page navigation; reopen another window to refresh it |
 
@@ -49,12 +49,12 @@ Run one server process per data directory. This is one shared household plan, no
 1. Export the current plan as JSON. Back up the full server data directory if you use Docker; scenario collections are separate from the exported main plan.
 2. Stop the old server before changing its image or data-directory ownership. Retain the same `/app/data` mapping.
 3. Build/restart the new version. The server normalizes the existing configuration and snapshots it before any normalization changes. Missing files initialize neutral defaults; malformed existing files report an error instead of being silently replaced.
-4. On a static site, the app first reads the project-specific `state-v3` localStorage record. If absent, it reads the earlier IndexedDB plan, then the old `state-v2` / `retirement-*-v1` local-storage records. The first successful change writes the complete state to localStorage. Legacy records are retained for rollback and are not updated.
+4. On a static site, the app first reads the transactional `plan-v3` record in the project-specific IndexedDB database. If absent, it reads the `state-v3` localStorage record, the earlier IndexedDB plan, then the old `state-v2` / `retirement-*-v1` local-storage records. The first successful change writes the complete state in an IndexedDB transaction. Legacy records are retained for rollback and are not updated. Close older calculator tabs before upgrading; export the current plan before downgrading because old releases cannot read the new record.
 5. Check the displayed household and balances, then export a fresh JSON copy. Keep exports before changing hostnames, ports, project paths, browsers or offline folders: these can change the storage location.
 
 Older deployments used origin-wide browser keys. If several calculators previously shared those keys, each new project can initially copy that same legacy plan; verify the imported household. New saves are isolated by project path, although other scripts on the same web origin can access browser storage. Browser preferences and the server's last confirmed cached plan use separate keys from static plans.
 
-Both static and offline modes now write to localStorage. HTTPS/localhost browsers with Web Locks serialize multi-tab edits; use one editing window on other hosts or when Web Locks is unavailable. Its single state record prevents partial plan/scenario/backup updates; edit it in one window at a time. In all browser modes, quota or storage denial reports a failed save and leaves the last saved state intact. Browser clearing, private browsing and device loss can remove all local plans and backups. Export Plan regularly.
+Static hosting uses atomic IndexedDB read/write transactions for its single plan/scenario/backup record. The offline ZIP retains the shared localStorage frame; edit offline plans in one window at a time. In all browser modes, quota or storage denial reports a failed save and leaves the last saved state intact. Browser clearing, private browsing and device loss can remove all local plans and backups. Export Plan regularly.
 
 Switching between Docker and Pages is deliberate: export on the source installation and import on the destination. Scenarios must be exported individually as plans if they need to move too. There is no automatic upload or reconciliation between installations.
 
@@ -72,7 +72,7 @@ Export Plan preserves the edits currently in a page. Failed saves are not queued
 | `src/public/plan-schema.js` | Common plan validation and normalization |
 | `src/public/runtime-config.js` | Explicit static default; dynamically replaced by the server |
 | `src/public/storage.js` | Stable `AppStorage` interface and server transport, caching and sync |
-| `src/public/browser-store.js` | Browser storage, Web Locks, read-only IndexedDB migration and offline bridge client |
+| `src/public/browser-store.js` | Transactional browser storage, legacy migration and offline bridge client |
 | `src/server-store.js` | Serialized filesystem persistence, flushed atomic replacement and backups |
 | `src/public/worker-tasks.js` | One task dispatcher shared by HTTP and offline workers |
 | `src/build-client.js` | Dedicated pages and offline worker source generation |

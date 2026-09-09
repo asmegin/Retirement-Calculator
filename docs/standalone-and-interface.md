@@ -12,7 +12,7 @@ Extract **all** files from `retirement-calculator-standalone.zip` and open `inde
 
 File pages share a small `storage.html` frame. This gives each dedicated page access to the same browser-local storage even in browsers that isolate storage by file path. The bridge accepts messages only from its parent, with keys restricted to this application; pages accept replies only from their own bridge. Browser privacy settings must allow local storage. Export Plan provides a portable backup when changing browsers, folders, or devices.
 
-Deployment mode is explicit. Static sites use localStorage with Web Locks where available; file pages use the shared local-storage frame. Earlier IndexedDB plans migrate without deleting their original records. An unavailable server reports unconfirmed saves and can show a cached plan, but never switches writes to local storage. Use Export/Import Plan to move plans deliberately. Both adapters support scenarios, validated import and up to 30 configuration backups. See the [hybrid deployment guide](hybrid-deployment.md) for GitHub Pages, Unraid permissions and migration.
+Deployment mode is explicit. Static sites use atomic IndexedDB transactions; file pages use the shared local-storage frame. Earlier localStorage and IndexedDB plans migrate without deleting their original records. An unavailable server reports unconfirmed saves and can show a cached plan, but never switches writes to local storage. Use Export/Import Plan to move plans deliberately. Both adapters support scenarios, validated import and up to 30 configuration backups. See the [hybrid deployment guide](hybrid-deployment.md) for GitHub Pages, Unraid permissions and migration.
 
 ## Pages and disclosure
 
