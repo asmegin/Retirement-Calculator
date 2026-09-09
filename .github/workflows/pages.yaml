@@ -30,6 +30,9 @@ jobs:
       - name: Install browser test tools
         run: |
           python -m pip install -r src/test/requirements.txt
+          # Playwright downloads its own Chromium. The runner's unused Chrome apt
+          # repository can have inconsistent mirror metadata and block apt update.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources
           python -m playwright install --with-deps chromium
       - name: Test static, server and offline browser workflows
         env:
