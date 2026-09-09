@@ -113,7 +113,22 @@ test('rental comparison respects per-property selection and rejects invalid tax 
   const c=fixture();c.realEstate=[{name:'Home',type:'principal',value:100000},{name:'Rental',type:'rental',value:200000,acb:100000,buildingAcb:80000,uccPool:70000}];
   assert.throws(()=>E.compareRentalSales(c,{propertyIndex:0,startYear:2026}),/rental property/);
   const r=E.compareRentalSales(c,{propertyIndex:1,startYear:2026});assert.equal(r.propertyIndex,1);assert.equal(r.propertyName,'Rental');
-  c.realEstate[1].uccPool=90000;assert.throws(()=>E.compareRentalSales(c,{propertyIndex:1,startYear:2026}),/UCC/);
+  // A rejected cost basis has to name the property, the fields and the amounts that clash.
+  const rejection=()=>{try{E.compareRentalSales(c,{propertyIndex:1,startYear:2026});}catch(error){return error;}throw new Error('Expected the comparison to reject this property.');};
+  c.realEstate[1].uccPool=90000;
+  const ucc=rejection();
+  assert.match(ucc.message,/^Rental: .*\$90,000.*\$80,000/);
+  assert.match(ucc.message,/Configuration › Properties page, under Advanced options/);
+  assert.equal(ucc.fix,'properties');
+  c.realEstate[1].uccPool=70000;c.realEstate[1].buildingAcb=120000;
+  assert.match(rejection().message,/^Rental: .*\$120,000.*\$100,000/);
+  c.realEstate[1].buildingAcb=80000;c.realEstate[1].acb=0;
+  assert.match(rejection().message,/^Rental: .*ACB \(price \+ improvements\).*\$0/);
+  c.realEstate[1].acb=100000;c.realEstate[1].saleYear=2020;
+  assert.match(rejection().message,/^Rental: the sale year is set to 2020, which is before 2026/);
+  assert.equal(rejection().fix,'properties');
+  c.realEstate[1].saleYear=0;c.realEstate[1].buildingAcb=80000.25;c.realEstate[1].uccPool=80000.50;
+  assert.match(rejection().message,/\$80,000\.5.*\$80,000\.25/);
 });
 
 test('rental spending ranks spendable cash rather than unsold equity and compares capacity, not the goal',()=>{

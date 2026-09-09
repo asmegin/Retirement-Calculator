@@ -4,11 +4,11 @@ A retirement calculator built for **Canada**, for one adult or a couple. Plan wi
 
 Run it as a **completely static site on GitHub Pages**, **on Docker/Unraid**, **offline from a ZIP**, or **locally with Node.js**. No subscription or external financial account connection is required.
 
-**Latest tagged release: 1.0.4** · [Download the standalone app](https://github.com/asmegin/Retirement-Calculator/releases/latest/download/retirement-calculator-standalone.zip) · [Releases](https://github.com/asmegin/Retirement-Calculator/releases) · [Version 1.0.4 release notes](docs/releases/v1.0.4.md)
+**Latest tagged release: 1.0.5** · [Download the standalone app](https://github.com/asmegin/Retirement-Calculator/releases/latest/download/retirement-calculator-standalone.zip) · [Releases](https://github.com/asmegin/Retirement-Calculator/releases) · [Version 1.0.5 release notes](docs/releases/v1.0.5.md)
 
 If the repository is private, sign in to GitHub with an account that has access before opening these downloads.
 
-**Current release: 1.0.4 (`v1.0.4`)** - [Changes and upgrade notes](docs/releases/v1.0.4.md). Download the [latest release](https://github.com/asmegin/Retirement-Calculator/releases/latest) or see the [hybrid deployment guide](docs/hybrid-deployment.md).
+**Current release: 1.0.5 (`v1.0.5`)** - [Changes and upgrade notes](docs/releases/v1.0.5.md). Download the [latest release](https://github.com/asmegin/Retirement-Calculator/releases/latest) or see the [hybrid deployment guide](docs/hybrid-deployment.md).
 
 ## Contents
 
@@ -124,7 +124,7 @@ docker compose up -d --build
 
 Open **http://localhost:3333**, or **http://YOUR-SERVER-IP:3333** from another device on your network.
 
-The included [compose.yaml](compose.yaml) can build this checkout or use `ghcr.io/asmegin/retirement-calculator:${APP_VERSION}`. The command above builds the current source as `1.0.4`. To use the published image instead, run `docker compose pull` followed by `docker compose up -d --no-build`. The container restarts automatically and stores the shared plan and backups in `./data`. Keep that directory when updating or replacing the container.
+The included [compose.yaml](compose.yaml) can build this checkout or use `ghcr.io/asmegin/retirement-calculator:${APP_VERSION}`. The command above builds the current source as `1.0.5`. To use the published image instead, run `docker compose pull` followed by `docker compose up -d --no-build`. The container restarts automatically and stores the shared plan and backups in `./data`. Keep that directory when updating or replacing the container.
 
 Useful commands, run from the same directory:
 
@@ -154,7 +154,7 @@ In **Docker → Add Container**, use:
 | Setting | Value |
 | --- | --- |
 | Name | `retirement-calculator` |
-| Repository | `ghcr.io/asmegin/retirement-calculator:1.0.4` |
+| Repository | `ghcr.io/asmegin/retirement-calculator:1.0.5` |
 | Network type | `Bridge` |
 | Container port | `3333` / TCP |
 | Host port | `3333`, or another unused port |
@@ -205,7 +205,7 @@ New installations start with neutral household placeholders, no assets or proper
 
 The first-run wizard has three steps: household ages/province/retirement targets, income and monthly or annual spending, then RRSP/TFSA/non-registered/corporate balances. **Set this up later / Skip to Dashboard** is available at every step and saves the neutral starter plan without applying an unfinished wizard draft.
 
-**Load Demo Profile** offers a fictional Canadian couple and an incorporated business owner with a rental. A prominent badge identifies demo mode. Demo plans, edits, scenarios and backups stay in a separate browser workspace?even on Docker. **Start My Own Plan** returns to your existing plan, or the first-run wizard if you have not set one up. Demo figures are illustrative, not Canadian statistical averages.
+**App Config ? Plan file and display ? Load Demo Profile** offers a fictional Canadian couple and an incorporated business owner with a rental. A prominent badge identifies demo mode. Demo plans, edits, scenarios and backups stay in a separate browser workspace?even on Docker. **Start My Own Plan** returns to your existing plan, or the first-run wizard if you have not set one up. Demo figures are illustrative, not Canadian statistical averages.
 
 On iPhone/iPad, use Safari's **Share - Add to Home Screen** to open the app in standalone mode. Apple mobile tags, PNG icons and a web manifest are included; this does not add an offline cache to a hosted site.
 
@@ -218,7 +218,7 @@ Have your account balances, contribution room, pension estimates and property/de
 5. **Pensions:** enter CPP/QPP and OAS estimates and start ages. Add a workplace pension only if you have one. Start with statement estimates; earnings-history mode is optional.
 6. **Properties:** add your home, rentals, mortgages and HELOCs. Review Advanced Options for payments, rental costs, ownership, selling costs and tax information.
 7. Select **Save changes** on each configuration page you edit. Check **Overview**, then run **Action plan → Check current status**.
-8. Select **Export Plan** to keep an initial backup.
+8. Open **App Config ? Plan file and display** and select **Export Plan** to keep an initial backup.
 
 Labels show whether amounts are monthly, yearly or percentages. For an existing loan, enter its **current balance**, rate and payment. For a rental, enter **remaining UCC**, not the total depreciation already claimed. Opening contribution room should come from your own records; it is different from the account balance.
 
@@ -286,13 +286,15 @@ Use **Compare scenarios** to experiment without immediately replacing the curren
 
 ## Saving, backups and moving your plan
 
+**App Config ? Plan file and display** contains **Export Plan**, **Encrypt backup with a password**, **Import Plan**, **Load Demo Profile**, and **Hide figures / Show figures**. These controls no longer appear in page headers. Save pending edits before navigating here: export includes the plan loaded into App Config, not unsaved edits on another page.
+
 **Export Plan** is the portable backup of your financial plan. Use **Import Plan** to restore it or transfer it between devices, browsers or installation methods. Scenario collections are separate from the main plan JSON; save/export any alternative you want to move as its own plan, or back up the server data directory for the complete collection.
 
 Exports use a versioned JSON envelope. Enable **Encrypt backup with a password** before selecting **Export Plan** to encrypt the payload with AES-256-GCM and a password-derived key. Import Plan detects encrypted files and asks for the password; a wrong password leaves the current plan untouched. Existing raw JSON exports remain supported.
 
 Keep the password separately: there is no password recovery. Encryption requires Web Crypto, available on HTTPS, localhost and supported offline browsers. For an Unraid LAN HTTP address, use an HTTPS reverse proxy or export/import from the offline copy; the app will not silently export plaintext when encryption is requested.
 
-The eye control (**Hide figures / Show figures**) masks displayed amounts, numeric controls, table figures and charts. Its preference is saved locally. This is a discreet display setting; it does not encrypt browser storage or change exported figures.
+The App Config eye control (**Hide figures / Show figures**) masks displayed amounts, numeric controls, table figures and charts. Its preference is saved locally. This is a discreet display setting; it does not encrypt browser storage or change exported figures.
 
 **Back up now** and **App Config → Backups** provide local/server snapshots. Up to 30 backups are retained. Restore replaces the current saved plan. Export a copy first if you also want to keep the current version.
 
@@ -307,7 +309,7 @@ data/
 
 Back up this directory independently of the container. Do not delete it when updating. Browser-only plans and backups can be lost when browser storage is cleared; keep JSON exports outside the browser.
 
-**Connected to Docker** means the app is using server storage and live synchronization. **Connected to server - HTTP sync** means saves still go to the server, with periodic refresh when WebSockets are unavailable. **Server offline - saves unavailable** means a save cannot be confirmed; a previously cached plan may still be viewable. Export Plan to keep unsaved edits. Server failures never switch writes to browser storage, and no unsaved changes are automatically replayed after reconnection.
+**Connected to Docker** means the app is using server storage and live synchronization. **Connected to server - HTTP sync** means saves still go to the server, with periodic refresh when WebSockets are unavailable. **Server offline - saves unavailable** means a save cannot be confirmed; a previously cached plan may still be viewable. Keep the page open, reconnect, and save before navigating or reloading. Server failures never switch writes to browser storage, and no unsaved changes are automatically replayed after reconnection.
 
 Static hosting saves the plan, scenarios and backups in one IndexedDB record, using atomic read/write transactions to preserve changes from concurrent browser tabs. Existing localStorage and earlier IndexedDB plans migrate on first save. The offline ZIP uses a shared local-storage frame. Existing browser storage is copied on first save without deleting the old keys. Server JSON filenames remain compatible. See [migration and recovery](docs/hybrid-deployment.md#upgrading-and-moving-plans) before upgrading.
 

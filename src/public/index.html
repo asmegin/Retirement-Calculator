@@ -64,6 +64,8 @@
   tr.clickable:hover{background:rgba(56,189,248,.09)}
   tr.short td{color:#fca5a5}
   tr.sale td{background:rgba(167,139,250,.12)}
+  .chart-toolbar{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin-bottom:.7rem}
+  .chart-toolbar .inline-help{flex-basis:100%;margin-top:.15rem}
   .legend{display:flex;gap:1rem;flex-wrap:wrap;font-size:.75rem;color:var(--muted);margin-top:.6rem}
   .swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:.35rem}
   #detail-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:100;align-items:center;justify-content:center;padding:1rem}
@@ -174,8 +176,8 @@
 </div>
 
 <section class="panel" id="p-projection">
-  <div class="card" style="position:relative">
-    <div style="position:absolute;top:1rem;right:1.4rem;z-index:5;font-size:.8rem;color:var(--muted);display:flex;align-items:center;gap:.5rem">
+  <div class="card">
+    <div class="chart-toolbar">
       <input type="checkbox" id="toggle-lines" checked style="width:auto;margin:0">
       <label for="toggle-lines" style="cursor:pointer;margin:0;font-weight:700">Debt payoff markers</label>
     </div>

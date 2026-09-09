@@ -14,6 +14,6 @@
       }else if(kind==='optimization')result=RetireEngine.optimizeWithdrawals(config,{objective:data.objective,onProgress:progress});
       else throw new Error('Unknown calculation task.');
       root.postMessage({id,result});
-    }catch(error){root.postMessage({id,error:error.message});}
+    }catch(error){root.postMessage({id,error:error.message,fix:error.fix});}
   };
 })(self);

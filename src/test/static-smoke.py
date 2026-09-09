@@ -46,13 +46,21 @@ with tempfile.TemporaryDirectory(prefix='retirement-static-') as directory:
               c.assumptions.targetDeathAge=70;c.assumptions.desiredMonthlyIncome=3200;c.assumptions.mcRuns=100;
               c.accounts=[{name:'Test savings',owner:c.incomes[0].name,type:'RRSP',balance:700000,growthRate:4}];return c;
             }''')
+            # Plan file tools live on App Config only; no page header carries them.
+            assert page.locator('#import-json-file').count()==0 and page.locator('#export-json').count()==0
+            loaded(page,project+'/app-config.html');page.wait_for_selector('#import-json')
             page.locator('#import-json-file').set_input_files({'name':'plan.json','mimeType':'application/json','buffer':json.dumps(fixture).encode()})
+            page.wait_for_function('PlanState.get().assumptions.desiredMonthlyIncome===3200')
+            loaded(page,project+'/index.html')
             page.wait_for_function('PlanState.get().assumptions.desiredMonthlyIncome===3200 && !document.getElementById("setup-host").open')
             page.locator('#m-goal').fill('3300');page.locator('#m-goal').press('Tab')
             page.evaluate('async()=>{for(let i=0;i<100;i++){if((await BrowserPlanStore.readConfig()).assumptions.desiredMonthlyIncome===3300)return;await new Promise(r=>setTimeout(r,50));}throw new Error("Save did not persist");}')
             for file in ['detailed','household','accounts','employment','properties','pensions','plan-settings','plan-properties','scenarios','withdrawals','app-config','action-plan','index']:
                 loaded(page,project+'/'+file+'.html')
                 assert page.evaluate('PlanState.get().assumptions.desiredMonthlyIncome') == 3300, (file,page.evaluate('PlanState.get().assumptions.desiredMonthlyIncome'),page.evaluate('async()=>(await BrowserPlanStore.readConfig()).assumptions.desiredMonthlyIncome'))
+                for control in ['export-json','encrypt-backup','import-json','import-json-file','demo-profile','privacy-toggle']:
+                    assert page.locator('#'+control).count()==(1 if file=='app-config' else 0),(file,control)
+                    assert page.locator('.settings-bar #'+control).count()==0,(file,control)
             # The same worker handler runs in static, server and file deployments.
             result = page.evaluate('''()=>new Promise((resolve,reject)=>{
               const worker=AppWorkers.create('comparison');worker.onerror=e=>reject(e.message);
@@ -67,8 +75,10 @@ with tempfile.TemporaryDirectory(prefix='retirement-static-') as directory:
             page.evaluate('async file=>{const r=await AppStorage.fetch("/api/backups/restore",{method:"POST",body:JSON.stringify({file})});if(!r.ok)throw new Error("Restore failed");}', backup)
             page.reload();page.wait_for_function('window.PlanState && PlanState.get()?.assumptions.desiredMonthlyIncome===3300')
             assert page.evaluate('async()=>(await BrowserPlanStore.listScenarios())[0].name') == 'Baseline'
+            loaded(page,project+'/app-config.html');page.wait_for_selector('#export-json')
             with page.expect_download() as download:page.locator('#export-json').click()
             assert json.loads(Path(download.value.path()).read_text())['data']['assumptions']['desiredMonthlyIncome'] == 3300
+            loaded(page,project+'/index.html')
             # Atomic browser writes preserve the saved plan on quota failure.
             outcome = page.evaluate('''async()=>{
               const original=IDBObjectStore.prototype.put,before=JSON.stringify(await BrowserPlanStore.readConfig());

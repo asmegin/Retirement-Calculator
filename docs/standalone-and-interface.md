@@ -4,7 +4,9 @@
 
 The container continues to serve the app on port 3333, with configuration and backups in the mounted data directory. The server supplies an explicit runtime mode. HTTP persists saves; Socket.IO synchronizes open pages, with HTTP polling when the live connection is unavailable. The image now uses Node 22, matching the test runtime.
 
-App Config shows the connection mode, HTTP Auth status, appearance, and backups. HTTP Auth credentials remain server environment variables: `BASIC_AUTH_ENABLED=true`, `BASIC_AUTH_USER`, and `BASIC_AUTH_PASS`. Change them in the Unraid container editor and restart the container. They are never included in exported plan JSON.
+App Config contains **Plan file and display**: Export Plan, optional password encryption, Import Plan, Load Demo Profile, and Hide figures / Show figures. These controls appear only here; storage status and the active-demo badge remain available across pages. Save edits before opening App Config to export them. Privacy continues to apply across pages and reloads, with its toggle in App Config.
+
+App Config also shows the connection mode, HTTP Auth status, appearance, and backups. HTTP Auth credentials remain server environment variables: `BASIC_AUTH_ENABLED=true`, `BASIC_AUTH_USER`, and `BASIC_AUTH_PASS`. Change them in the Unraid container editor and restart the container. They are never included in exported plan JSON.
 
 ## Standalone files
 
@@ -29,7 +31,7 @@ Deployment mode is explicit. Static sites use atomic IndexedDB transactions; fil
 | Pensions | Government and optional workplace pensions; optional earnings-history calculations. Workplace plans with age estimates show a start-age dropdown and matching read-only monthly amounts. Edit statement estimates in Advanced Options. Linking payments to retirement uses the member’s retirement age; existing ages between estimates are labelled as estimated. |
 | Compare scenarios | Separate alternatives with net-worth, tax, benefit and shortfall deltas. |
 | Withdrawal strategy | Bounded withdrawal search, apply controls and an exportable annual schedule. |
-| App Config | Appearance, HTTP Auth status/instructions, storage mode and backups. |
+| App Config | Plan export/import, optional encryption, demo profiles, Hide figures, appearance, HTTP Auth status/instructions, storage mode and backups. |
 
 Every navigation link opens a dedicated HTML page; the server also accepts the corresponding extensionless route. There are no section-anchor navigation links. Overview and Plan details are direct links; Accounts is a Configuration sub-menu and Plan settings is under Plan. Unsaved configuration edits are identified beside Save changes and are preserved when another window sends a plan update. `config.html` remains a household/setup entry point; `planning.html` remains a scenario entry point for existing bookmarks.
 

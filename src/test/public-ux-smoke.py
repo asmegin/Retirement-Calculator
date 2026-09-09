@@ -45,14 +45,22 @@ try:
             saved=page.evaluate('()=>BrowserPlanStore.readConfig()')
             assert saved['incomes'][0]['salary']==95000
             assert saved['accounts'][0]['balance']==350000
+            # Plan file tools and discreet mode belong to App Config, not to every page.
+            assert page.locator('#privacy-toggle').count()==0 and page.locator('#export-json').count()==0 and page.locator('#demo-profile').count()==0
             # Discreet mode masks figures, disables numeric editing and hides chart pixels.
+            page.goto(base+'/app-config.html');page.wait_for_selector('#privacy-toggle')
+            page.set_viewport_size({'width':320,'height':844})
+            assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'), 'App Config overflows at 320px'
+            page.set_viewport_size({'width':1280,'height':900})
             page.locator('#privacy-toggle').click();page.wait_for_function('AppPrivacy.active')
+            page.goto(base+'/index.html');page.wait_for_function('window.PlanState && PlanState.get() && AppPrivacy.active')
             assert page.locator('#m-max .private-original').is_hidden()
             assert page.locator('#m-max .private-mask').inner_text()=='••••••'
             assert page.locator('#m-goal').is_hidden()
             assert page.evaluate('()=>BrowserPlanStore.readConfig()')==saved
             page.reload();page.wait_for_function('window.PlanState && PlanState.get() && AppPrivacy.active')
             assert page.locator('#m-max .private-original').is_hidden()
+            page.goto(base+'/app-config.html');page.wait_for_selector('#privacy-toggle')
             page.locator('#privacy-toggle').click();page.wait_for_function('!AppPrivacy.active')
             # Plain export is versioned; encrypted export never contains plaintext household fields.
             with page.expect_download() as download: page.locator('#export-json').click()
@@ -65,6 +73,7 @@ try:
             assert envelope['encrypted'] is True and envelope['iterations']==250000
             assert b'assumptions' not in encrypted and b'Maple test phrase' not in encrypted
             page.evaluate('async()=>{const c=structuredClone(PlanState.get());c.assumptions.desiredMonthlyIncome=5100;await AppStorage.save(c);}')
+            assert page.locator('#encrypt-backup').is_checked(), 'Saved-plan updates reset the encryption choice'
             page.locator('#import-json-file').set_input_files({'name':'encrypted.json','mimeType':'application/json','buffer':encrypted})
             page.locator('#backup-password').fill('wrong password');page.locator('#backup-submit').click()
             page.wait_for_function('document.getElementById("backup-error").textContent==="Incorrect password"')
@@ -72,8 +81,10 @@ try:
             page.locator('#backup-password').fill('Maple test phrase');page.locator('#backup-submit').click()
             page.wait_for_function('!document.getElementById("backup-dialog").open && PlanState.get().assumptions.desiredMonthlyIncome===5000')
             assert page.locator('#backup-password').input_value()==''
+            assert page.locator('#plan-file-status').inner_text()=='Plan imported and recalculated.'
             # Demonstrations never replace the personal plan, including edits made in demo mode.
             for profile in ['couple','investor']:
+                page.goto(base+'/app-config.html');page.wait_for_selector('#demo-profile')
                 with page.expect_navigation(wait_until='load'):page.locator('#demo-profile').select_option(profile)
                 page.wait_for_function('window.PlanState && PlanState.get()?.demoProfile && AppStorage.isDemo')
                 assert page.locator('#demo-badge').is_visible()

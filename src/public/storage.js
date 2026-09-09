@@ -12,7 +12,7 @@
       const response=await nativeFetch(new URL(path.replace(/^\//,''),base),{...options,credentials:'same-origin',cache:'no-store',signal:options.signal||AbortSignal.timeout(8000)});
       setOnline(response.status<500&&response.status!==401);
       return response;
-    }catch(_){setOnline(false);throw new Error('Server unavailable. Your save was not confirmed. Reconnect before saving, or Export Plan to keep your edits.');}
+    }catch(_){setOnline(false);throw new Error('Server unavailable. Your save was not confirmed. Keep this page open and reconnect before saving your edits.');}
   }
   async function cache(c){try{await local.cacheConfig(c);}catch(_){/* A full browser cache must not block durable server storage. */}}
   async function sync(){

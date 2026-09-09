@@ -241,10 +241,10 @@ function advanced(content,label='Advanced Options') {
 }
 function render() {
   el('save-settings').disabled=false;
-  const editor=el('editor');editor.replaceChildren();
+  const editor=el('editor'),planFiles=el('plan-file-section');editor.replaceChildren();
   const titles={household:'Household',accounts:'Accounts','plan-settings':'Plan settings',employment:'Employment',properties:'Properties',pensions:'Pensions','app-config':'App Config'};
   el('page-title').textContent=titles[page]||'Household';document.title=el('page-title').textContent+' - Retirement';
-  if(page==='app-config'){el('save-settings').hidden=true;el('settings-save-status').textContent='Appearance saves automatically';editor.append(systemSection(),backupSection());queueMicrotask(loadBackups);return;}
+  if(page==='app-config'){el('save-settings').hidden=true;el('settings-save-status').textContent='Appearance and display preferences save automatically';editor.append(planFiles||planFileSection(),systemSection(),backupSection());queueMicrotask(loadBackups);return;}
   if(page!=='accounts')editor.appendChild(assumptionsSection());
   if(['household','accounts','employment','pensions','plan-settings'].includes(page))editor.appendChild(listSection('incomes'));
   if(page==='household')editor.appendChild(childcareSection());
@@ -470,6 +470,20 @@ function pensionTiers(plan, changed) {
   return section;
 }
 
+function planFileSection() {
+  const sec=extraSection('Plan file and display');
+  // Keep these controls across saved-plan updates so pending imports and encryption choices survive.
+  sec.id='plan-file-section';
+  const hint=document.createElement('p');hint.className='inline-help';hint.textContent='Save a copy of your plan, bring one back from a file, try a demo profile, or hide dollar figures while someone is looking over your shoulder.';
+  const row=document.createElement('div');row.className='plan-file-tools';
+  const status=document.createElement('p');status.id='plan-file-status';status.className='inline-help';status.setAttribute('role','status');
+  window.PlanFileTools?.mount(row,status);
+  window.DemoProfiles?.mount(row,status);
+  window.AppPrivacy?.mountToggle(row,status);
+  sec.append(hint,row,status);
+  return sec;
+}
+
 function backupSection() {
   const sec = document.createElement('div'); sec.className = 'section';
   sec.innerHTML = '<h2>Backups</h2><div class="notice">A backup is written automatically before every save, and the 30 most recent are kept. Restoring replaces the live configuration immediately.</div><div id="backup-list">Loading…</div>';
@@ -508,7 +522,6 @@ async function save() {
   finally{button.disabled=false;}
 }
 
-async function exportConfig(){try{await PlanBackupUI.export(config,document.getElementById('encrypt-backup').checked);}catch(error){toast(error.message,true);}}
 async function importConfig(evt){
   const file=evt.target.files[0];if(!file)return;
   try{const parsed=await PlanBackupUI.read(file);if(!parsed)return;receiveSettings(await AppStorage.save(parsed));loadBackups();toast('Configuration imported');}

@@ -31,12 +31,17 @@
     const button=document.getElementById('privacy-toggle');if(button){button.setAttribute('aria-pressed',String(active));button.setAttribute('aria-label',active?'Show financial figures':'Hide financial figures');button.textContent=active?'\u{1F441} Show figures':'\u{1F441} Hide figures';}
     protect();if(persist)await AppStorage.setPreference('privacy',active);
   }
+  function mountToggle(container,status){
+    const button=document.createElement('button');button.id='privacy-toggle';button.className='btn ghost';button.title='Discreet display mode';
+    button.onclick=()=>apply(!active).catch(e=>{const target=status||document.getElementById('file-status');if(target)target.textContent=e.message;});
+    container.append(button);
+    button.setAttribute('aria-pressed',String(active));button.setAttribute('aria-label',active?'Show financial figures':'Hide financial figures');button.textContent=active?'\u{1F441} Show figures':'\u{1F441} Hide figures';
+    return button;
+  }
   document.addEventListener('DOMContentLoaded',()=>{
-    const bar=document.querySelector('.settings-bar');if(!bar)return;
-    const button=document.createElement('button');button.id='privacy-toggle';button.className='btn ghost';button.title='Discreet display mode';button.onclick=()=>apply(!active).catch(e=>document.getElementById('file-status').textContent=e.message);bar.prepend(button);
     observer=new MutationObserver(()=>protect());
     AppStorage.getPreference('privacy').then(v=>apply(v===true,false)).catch(()=>apply(false,false));
     window.addEventListener('storage',()=>AppStorage.getPreference('privacy').then(v=>apply(v===true,false)).catch(()=>{}));
   });
-  root.AppPrivacy={apply,get active(){return active;}};
+  root.AppPrivacy={apply,mountToggle,get active(){return active;}};
 })(window);

@@ -27,6 +27,23 @@ def check_comparisons(page,base):
     page.wait_for_selector('#save-plan:enabled')
     assert page.locator('a[href="./plan-properties.html"][aria-current=page]').count()==1
     tool=page.locator('[data-comparison=rental]')
+    # Validation must survive the worker boundary and offer the actual configuration page.
+    for patch,expected in [({'uccPool':350000},['CCA pool remaining (UCC)','$350,000','$250,000']),
+                           ({'buildingAcb':350000},['Building cost excluding land','$350,000','$300,000']),
+                           ({'acb':0},['ACB (price + improvements)','$0']),
+                           ({'saleYear':2020},['Sale year (0 = never)','2020',str(time.localtime().tm_year)])]:
+        page.evaluate('async({saved,patch})=>{const c=structuredClone(saved);Object.assign(c.realEstate[0],patch);await AppStorage.save(c);}',{'saved':saved,'patch':patch})
+        tool.get_by_role('button',name='Calculate best sale years',exact=True).click()
+        link=tool.get_by_role('link',name='Open Properties',exact=True);link.wait_for()
+        message=tool.locator('.tool-status').inner_text()
+        assert all(text in message for text in ['Test rental','Configuration › Properties','Advanced options']+expected),message
+        assert link.get_attribute('href')=='./properties.html'
+        assert tool.locator('.comparison-spending-table').count()==0
+    with page.expect_navigation(wait_until='load'):link.click()
+    page.wait_for_selector('[data-category=realEstate]')
+    assert page.locator('[data-setting=saleYear]').locator('xpath=ancestor::details').count()==1
+    page.evaluate('c=>AppStorage.save(c)',saved)
+    page.goto(base+'/plan-properties.html');page.wait_for_selector('#save-plan:enabled')
     tool.get_by_role('button',name='Calculate best sale years',exact=True).click()
     tool.locator('.comparison-spending-table tbody tr').first.wait_for(timeout=60000)
     assert tool.locator('.comparison-spending-table tbody tr').count()==15
@@ -274,6 +291,7 @@ with tempfile.TemporaryDirectory(prefix='retirement-browser-data-') as data:
             demo_context=browser.new_context();demo_page=demo_context.new_page()
             demo_page.goto(base+'/index.html');demo_page.wait_for_function('config && sim')
             assert 'own server' in demo_page.locator('#privacy-notice').inner_text()
+            demo_page.goto(base+'/app-config.html');demo_page.wait_for_selector('#demo-profile')
             with demo_page.expect_navigation(wait_until='load'):demo_page.locator('#demo-profile').select_option('investor')
             demo_page.wait_for_function('config && AppStorage.isDemo')
             demo_page.evaluate('async()=>{const c=structuredClone(PlanState.get());c.assumptions.desiredMonthlyIncome=9999;await AppStorage.save(c);}')
@@ -317,27 +335,62 @@ with tempfile.TemporaryDirectory(prefix='retirement-browser-data-') as data:
             local=offline.new_page();local.on('pageerror',lambda e:errors.append(str(e)))
             local.goto((ROOT/'public/index.html').as_uri());local.wait_for_function('config && sim',timeout=20000)
             assert local.evaluate('AppStorage.mode')=='local'
+            assert local.locator('#import-json-file').count()==0 and local.locator('#export-json').count()==0
+            local.goto((ROOT/'public/app-config.html').as_uri());local.wait_for_selector('#import-json')
             local.locator('#import-json-file').set_input_files({'name':'plan.json','mimeType':'application/json','buffer':json.dumps(fixture).encode()})
             local.wait_for_function('config.assumptions.desiredMonthlyIncome===5000')
+            local.goto((ROOT/'public/index.html').as_uri());local.wait_for_function('config && sim')
             local.locator('#m-goal').fill('5300');local.locator('#m-goal').press('Tab');local.wait_for_timeout(900)
             local.goto((ROOT/'public/household.html').as_uri());local.wait_for_selector('#editor input')
             assert local.evaluate('config.assumptions.desiredMonthlyIncome')==5300
             local.goto((ROOT/'public/index.html').as_uri());local.wait_for_function('sim !== null',timeout=60000)
             assert local.evaluate('config.assumptions.desiredMonthlyIncome')==5300
             check_action_plan(local,(ROOT/'public/action-plan.html').as_uri())
+            local.goto((ROOT/'public/app-config.html').as_uri());local.wait_for_selector('#export-json')
             with local.expect_download() as download:local.locator('#export-json').click()
             assert download.value.suggested_filename=='retirement-plan.json'
-            local.goto((ROOT/'public/app-config.html').as_uri());local.wait_for_selector('[data-dark-appearance]');local.locator('[data-dark-appearance]').check()
+            local.locator('[data-dark-appearance]').check()
             local.goto((ROOT/'public/index.html').as_uri());local.wait_for_function('config && document.documentElement.dataset.theme==="dark"')
             before=local.evaluate('config.assumptions.desiredMonthlyIncome')
+            local.goto((ROOT/'public/app-config.html').as_uri());local.wait_for_selector('#import-json')
             local.locator('#import-json-file').set_input_files({'name':'invalid.json','mimeType':'application/json','buffer':b'{"unrelated":true}'})
-            local.wait_for_function('document.getElementById("file-status").textContent.includes("Choose a retirement plan")')
+            local.wait_for_function('document.getElementById("plan-file-status").textContent.includes("Choose a retirement plan")')
             assert local.evaluate('config.assumptions.desiredMonthlyIncome')==before
+            local.goto((ROOT/'public/index.html').as_uri());local.wait_for_function('config && sim')
             local.set_viewport_size({'width':390,'height':844});local.wait_for_timeout(100)
             local.locator('.mobile-menu-toggle').click();assert local.get_by_role('link',name='Overview',exact=True).is_visible();local.locator('.mobile-menu-toggle').click()
             local.screenshot(path=str(Path(tempfile.gettempdir())/'retirement-overview-mobile.png'))
             assert local.evaluate('document.documentElement.scrollWidth<=innerWidth'),local.evaluate('[...document.querySelectorAll("body *")].filter(e=>e.getBoundingClientRect().right>innerWidth+1&&getComputedStyle(e).display!=="none").map(e=>[e.tagName,e.id,e.className,e.getBoundingClientRect().width]).slice(0,25)')
             local.screenshot(path=str(Path(tempfile.gettempdir())/'retirement-overview-mobile.png'))
+            # Plan details keeps the payoff-marker toggle above the canvas instead of over the chart legend.
+            restore=local.evaluate('PlanState.get()')
+            local.evaluate('''async()=>{const c=structuredClone(PlanState.get());
+              c.realEstate=[{name:'Home with a very long property name that must fit in the chart',type:'principal',value:800000,acb:500000,appreciation:2,mortgage:40000,interestRate:4,paymentMonthly:2600},
+                {name:'Rental',type:'rental',value:500000,acb:300000,buildingAcb:250000,uccPool:200000,appreciation:2,grossRentMonthly:2000,mortgage:200000,interestRate:4,paymentMonthly:1400}];
+              await AppStorage.save(c);}''')
+            local.goto((ROOT/'public/detailed.html').as_uri());local.wait_for_function('config && sim',timeout=60000)
+            layout=local.evaluate('''()=>{
+              const bar=document.querySelector('.chart-toolbar').getBoundingClientRect();
+              const canvas=document.getElementById('chart-trajectory').getBoundingClientRect();
+              return {barBottom:bar.bottom,barRight:bar.right,canvasTop:canvas.top,width:innerWidth};
+            }''')
+            assert layout['barBottom']<=layout['canvasTop']+1,layout
+            assert layout['barRight']<=layout['width']+1,layout
+            # Payoff labels are drawn inside the plot area rather than clipped against the value axis.
+            drawn=local.evaluate('''()=>{
+              const chart=Object.values(charts).find(c=>c.canvas.id==='chart-trajectory'),axis=chart.scales.x,calls=[];
+              const original=CanvasRenderingContext2D.prototype.fillText;
+              CanvasRenderingContext2D.prototype.fillText=function(text,tx){calls.push({text:String(text),x:tx,align:this.textAlign,width:this.measureText(text).width});return original.apply(this,arguments);};
+              try{chart.draw();}finally{CanvasRenderingContext2D.prototype.fillText=original;}
+              return {left:axis.left,right:axis.right,labels:calls.filter(c=>c.text.includes(' paid off ('))};
+            }''')
+            assert len(drawn['labels'])==2,drawn
+            for label in drawn['labels']:
+                left=label['x']-label['width'] if label['align']=='right' else label['x']
+                assert left>=drawn['left']-1,(label,drawn['left'])
+                assert left+label['width']<=drawn['right']+1,(label,drawn['right'])
+            local.evaluate('c=>AppStorage.save(c)',restore)
+            local.goto((ROOT/'public/index.html').as_uri());local.wait_for_function('config && sim',timeout=60000)
             assert not errors,errors
             check_comparisons(page,base)
             check_comparisons(local,(ROOT/'public').as_uri())
