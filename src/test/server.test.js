@@ -7,11 +7,17 @@ async function launch(t,auth=false){
   const listener=net.createServer();await new Promise(resolve=>listener.listen(0,'127.0.0.1',resolve));
   const port=listener.address().port;await new Promise(resolve=>listener.close(resolve));
   const child=spawn(process.execPath,['server.js'],{cwd:path.join(__dirname,'..'),env:{...process.env,DATA_DIR:dir,PORT:String(port),BIND:'127.0.0.1',BASIC_AUTH_ENABLED:String(auth),BASIC_AUTH_USER:'test-user',BASIC_AUTH_PASS:'test-password'},stdio:['ignore','pipe','pipe']});
-  let logs='';child.stdout.on('data',s=>logs+=s);child.stderr.on('data',s=>logs+=s);
-  t.after(async()=>{if(child.exitCode===null){child.kill();await new Promise(resolve=>child.once('exit',resolve));}await fs.rm(dir,{recursive:true,force:true});});
+  let logs='',spawnError;child.stdout.on('data',s=>logs+=s);child.stderr.on('data',s=>logs+=s);child.once('error',error=>{spawnError=error;});
+  t.after(async()=>{if(child.pid&&child.exitCode===null&&child.signalCode===null){child.kill();await new Promise(resolve=>child.once('exit',resolve));}await fs.rm(dir,{recursive:true,force:true});});
   const base='http://127.0.0.1:'+port;
-  for(let i=0;i<100;i++){try{if((await fetch(base+'/healthz')).ok)return {base,dir,child};}catch(_){}if(child.exitCode!==null)throw new Error(logs);await new Promise(resolve=>setTimeout(resolve,50));}
-  throw new Error('Server did not become ready: '+logs);
+  const deadline=performance.now()+30000;
+  while(performance.now()<deadline){
+    if(spawnError)throw spawnError;
+    if(child.exitCode!==null||child.signalCode!==null)throw new Error('Server exited before readiness: '+logs);
+    try{if((await fetch(base+'/healthz',{signal:AbortSignal.timeout(1000)})).ok)return {base,dir,child};}catch(_){}
+    await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  throw new Error('Server did not become ready within 30 seconds: '+logs);
 }
 test('server runtime, durable API, origin protection and payload errors',async t=>{
   const {base,dir}=await launch(t);

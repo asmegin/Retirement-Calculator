@@ -78,15 +78,15 @@ function systemSection(){
   AppStorage.fetch('/api/system').then(async r=>{const s=await r.json();if(!r.ok)throw new Error(s.error||'Server unavailable');state.textContent=AppStorage.mode==='server'?'Self-hosted server. HTTP Auth is '+(s.authEnabled?'enabled.':'disabled.'):'Static / standalone mode. Calculations and plan storage stay in this browser. Export Plan to back up or move your plan.';}).catch(error=>state.textContent=error.message);
   const auth=document.createElement('div');auth.innerHTML='<h3>HTTP Auth on Unraid</h3><p class="inline-help">Edit the container’s environment variables, then restart it. Authentication protects both the pages and real-time sync. Credentials stay on the server.</p><pre>BASIC_AUTH_ENABLED=true\nBASIC_AUTH_USER=your-username\nBASIC_AUTH_PASS=your-password</pre><p class="inline-help">The Docker port defaults to 3333. Keep the data folder mapped to persistent Unraid storage. Standalone plans can be moved between browsers with Export Plan and Import Plan.</p>';if(AppStorage.deployment==='server')sec.append(auth);return sec;
 }
-function debtComparisonSection(){
+function debtComparisonSection(getConfig){
   const sec=extraSection('Pay debt or invest the same money?'),options={growth:5};
   extraFields(sec,options,[['growth','Investment return (%)','Expected yearly return if you invest the extra payments in a taxable account instead.']]);
   const button=document.createElement('button');button.className='btn ghost';button.textContent='Compare strategies';const result=document.createElement('p');result.className='inline-help';result.setAttribute('role','status');
   button.onclick=()=>{
     try{
-      const baseline=E.simulate(config),alternative=E.normalizeConfig(config);delete alternative.assumptions.withdrawalPlan;
+      const cfg=getConfig(),baseline=E.simulate(cfg),alternative=E.normalizeConfig(cfg);delete alternative.assumptions.withdrawalPlan;
       alternative.realEstate.forEach(p=>p.extraPaymentAnnual=0);
-      baseline.years.filter(y=>y.extraDebtPayments>0).forEach(y=>alternative.accounts.push({name:'Extra investment '+y.year,owner:config.incomes[0].name,type:'TAXABLE',balance:0,growthRate:options.growth,contribAmt:y.extraDebtPayments,contribFreq:'yearly',contribStartYear:y.year,contribEndYear:y.year,contributeInRetirement:true}));
+      baseline.years.filter(y=>y.extraDebtPayments>0).forEach(y=>alternative.accounts.push({name:'Extra investment '+y.year,owner:cfg.incomes[0].name,type:'TAXABLE',balance:0,growthRate:options.growth,contribAmt:y.extraDebtPayments,contribFreq:'yearly',contribStartYear:y.year,contribEndYear:y.year,contributeInRetirement:true}));
       const r=E.simulate(alternative),fmt=v=>new Intl.NumberFormat('en-CA',{style:'currency',currency:'CAD',maximumFractionDigits:0}).format(v);
       result.textContent='Extra debt payments: ending net worth '+fmt(baseline.finalNetWorthReal)+'. Invest the same annual cash instead: '+fmt(r.finalNetWorthReal)+'; change '+fmt(r.finalNetWorthReal-baseline.finalNetWorthReal)+' in today’s dollars. Lifetime personal tax changes by '+fmt(r.lifetimeTax-baseline.lifetimeTax)+'. First shortfall: '+(r.depletedYear||'none')+'. This comparison leaves your saved plan unchanged.';
     }catch(error){result.textContent=error.message;}

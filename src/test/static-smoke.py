@@ -50,7 +50,7 @@ with tempfile.TemporaryDirectory(prefix='retirement-static-') as directory:
             page.wait_for_function('PlanState.get().assumptions.desiredMonthlyIncome===3200 && !document.getElementById("setup-host").open')
             page.locator('#m-goal').fill('3300');page.locator('#m-goal').press('Tab')
             page.evaluate('async()=>{for(let i=0;i<100;i++){if((await BrowserPlanStore.readConfig()).assumptions.desiredMonthlyIncome===3300)return;await new Promise(r=>setTimeout(r,50));}throw new Error("Save did not persist");}')
-            for file in ['detailed','household','accounts','employment','properties','pensions','plan-settings','scenarios','withdrawals','app-config','action-plan','index']:
+            for file in ['detailed','household','accounts','employment','properties','pensions','plan-settings','plan-properties','scenarios','withdrawals','app-config','action-plan','index']:
                 loaded(page,project+'/'+file+'.html')
                 assert page.evaluate('PlanState.get().assumptions.desiredMonthlyIncome') == 3300, (file,page.evaluate('PlanState.get().assumptions.desiredMonthlyIncome'),page.evaluate('async()=>(await BrowserPlanStore.readConfig()).assumptions.desiredMonthlyIncome'))
             # The same worker handler runs in static, server and file deployments.
@@ -147,6 +147,16 @@ with tempfile.TemporaryDirectory(prefix='retirement-static-') as directory:
             assert migrating.evaluate('async()=>(await BrowserPlanStore.readConfig()).assumptions.desiredMonthlyIncome')==3200
             assert migrating.evaluate('async()=>(await BrowserPlanStore.listScenarios())[0].name')=='Database plan'
             migration.close()
+            # Visiting and saving property setup must not reset a category-based plan.
+            categories=browser.new_context();category_page=categories.new_page()
+            loaded(category_page,project+'/properties.html')
+            category_page.evaluate('''async c=>{c.assumptions.spendingMode='categories';c.assumptions.spendingCategories=[{name:'Living',amount:2000,frequency:'monthly',startAge:65,endAge:999,inflation:0}];await AppStorage.save(c);}''',fixture)
+            category_page.reload();category_page.wait_for_selector('#save-settings:enabled')
+            assert category_page.evaluate('PlanState.get().assumptions.spendingMode')=='categories'
+            category_page.locator('#save-settings').click()
+            category_page.wait_for_function('document.getElementById("settings-save-status").textContent==="All changes saved"')
+            assert category_page.evaluate('async()=>(await BrowserPlanStore.readConfig()).assumptions.spendingMode')=='categories'
+            categories.close()
             assert not errors, errors
             assert not failures, failures
             assert not sockets, sockets
