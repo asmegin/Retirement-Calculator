@@ -52,7 +52,9 @@ try:
             page.set_viewport_size({'width':320,'height':844})
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'), 'App Config overflows at 320px'
             page.set_viewport_size({'width':1280,'height':900})
-            page.locator('#privacy-toggle').click();page.wait_for_function('AppPrivacy.active')
+            page.locator('#privacy-toggle').click()
+            # file:// preferences use an asynchronous storage frame; masking precedes its acknowledgement.
+            page.wait_for_function('async()=>AppPrivacy.active && (await AppStorage.getPreference("privacy"))===true')
             page.goto(base+'/index.html');page.wait_for_function('window.PlanState && PlanState.get() && AppPrivacy.active')
             assert page.locator('#m-max .private-original').is_hidden()
             assert page.locator('#m-max .private-mask').inner_text()=='••••••'
@@ -61,7 +63,8 @@ try:
             page.reload();page.wait_for_function('window.PlanState && PlanState.get() && AppPrivacy.active')
             assert page.locator('#m-max .private-original').is_hidden()
             page.goto(base+'/app-config.html');page.wait_for_selector('#privacy-toggle')
-            page.locator('#privacy-toggle').click();page.wait_for_function('!AppPrivacy.active')
+            page.locator('#privacy-toggle').click()
+            page.wait_for_function('async()=>!AppPrivacy.active && (await AppStorage.getPreference("privacy"))===false')
             # Plain export is versioned; encrypted export never contains plaintext household fields.
             with page.expect_download() as download: page.locator('#export-json').click()
             plain=json.loads(Path(download.value.path()).read_text())
