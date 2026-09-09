@@ -46,7 +46,7 @@ If the repository is private, sign in to GitHub with an account that has access 
 
 | Method | Best for | Requirements | Where the plan is saved |
 | --- | --- | --- | --- |
-| GitHub Pages / static web host | Browser-only use through a website, without running a backend | A recent browser with site storage enabled; GitHub Actions to publish | localStorage in each browser, isolated by site and project path |
+| GitHub Pages / static web host | Browser-only use through a website, without running a backend | A recent browser with site storage enabled; GitHub Actions to publish | IndexedDB in each browser, isolated by site and project path |
 | Standalone ZIP | The easiest way to use it on one computer | A recent desktop Edge or Chrome browser | Browser storage on that device |
 | Docker / Unraid | A shared household plan accessible from several devices | Docker Engine/Desktop with Compose, or Unraid | Your mounted server data directory |
 | Node.js source | Local hosting or development | Node.js 22+, npm, and the source files | The directory you set as `DATA_DIR` |
@@ -309,7 +309,7 @@ Back up this directory independently of the container. Do not delete it when upd
 
 **Connected to Docker** means the app is using server storage and live synchronization. **Connected to server - HTTP sync** means saves still go to the server, with periodic refresh when WebSockets are unavailable. **Server offline - saves unavailable** means a save cannot be confirmed; a previously cached plan may still be viewable. Export Plan to keep unsaved edits. Server failures never switch writes to browser storage, and no unsaved changes are automatically replayed after reconnection.
 
-Static hosting saves the plan, scenarios and backups in one localStorage record, with Web Locks to serialize edits between supported browser tabs. Existing IndexedDB plans migrate on first save. The offline ZIP uses a shared local-storage frame. Existing browser storage is copied on first save without deleting the old keys. Server JSON filenames remain compatible. See [migration and recovery](docs/hybrid-deployment.md#upgrading-and-moving-plans) before upgrading.
+Static hosting saves the plan, scenarios and backups in one IndexedDB record, using atomic read/write transactions to preserve changes from concurrent browser tabs. Existing localStorage and earlier IndexedDB plans migrate on first save. The offline ZIP uses a shared local-storage frame. Existing browser storage is copied on first save without deleting the old keys. Server JSON filenames remain compatible. See [migration and recovery](docs/hybrid-deployment.md#upgrading-and-moving-plans) before upgrading.
 
 The server is a single household workspace: run one server process against a data directory. Concurrent saves are serialized, but the last successful whole-plan save wins. Export alternatives or use scenarios when people edit the plan independently.
 

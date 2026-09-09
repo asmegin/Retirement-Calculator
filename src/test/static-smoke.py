@@ -71,14 +71,24 @@ with tempfile.TemporaryDirectory(prefix='retirement-static-') as directory:
             assert json.loads(Path(download.value.path()).read_text())['data']['assumptions']['desiredMonthlyIncome'] == 3300
             # Atomic browser writes preserve the saved plan on quota failure.
             outcome = page.evaluate('''async()=>{
-              const original=Storage.prototype.setItem,before=JSON.stringify(await BrowserPlanStore.readConfig());
-              Storage.prototype.setItem=function(){throw new DOMException('Quota exhausted','QuotaExceededError');};
+              const original=IDBObjectStore.prototype.put,before=JSON.stringify(await BrowserPlanStore.readConfig());
+              IDBObjectStore.prototype.put=function(){throw new DOMException('Quota exhausted','QuotaExceededError');};
               try{const c=structuredClone(PlanState.get());c.assumptions.desiredMonthlyIncome=9999;
                 try{await AppStorage.save(c);return {failed:false};}catch(error){return {failed:true,message:error.message,unchanged:before===JSON.stringify(await BrowserPlanStore.readConfig())};}
-              }finally{Storage.prototype.setItem=original;}
+              }finally{IDBObjectStore.prototype.put=original;}
             }''')
             assert outcome['failed'] and outcome['unchanged'], outcome
             assert 'storage' in outcome['message'].lower()
+            # A write is not confirmed until commit; aborting a queued put preserves the old plan.
+            aborted=page.evaluate('''async()=>{
+              const original=IDBObjectStore.prototype.put,before=JSON.stringify(await BrowserPlanStore.readConfig());
+              IDBObjectStore.prototype.put=function(...args){const request=original.apply(this,args);this.transaction.abort();return request;};
+              try{const c=structuredClone(PlanState.get());c.assumptions.desiredMonthlyIncome=9998;
+                try{await AppStorage.save(c);return false;}catch(error){return before===JSON.stringify(await BrowserPlanStore.readConfig());}
+              }finally{IDBObjectStore.prototype.put=original;}
+            }''')
+            assert aborted
+
             # Different Pages projects on the same origin have separate plans.
             other = context.new_page()
             for path in ['/OtherCalculator/index.html','/index.html']:
@@ -91,6 +101,16 @@ with tempfile.TemporaryDirectory(prefix='retirement-static-') as directory:
             other.evaluate('window.pendingScenario=BrowserPlanStore.saveScenario("Tab B",PlanState.get());void 0')
             page.evaluate('()=>window.pendingScenario');other.evaluate('()=>window.pendingScenario')
             assert sorted(s['name'] for s in page.evaluate('()=>BrowserPlanStore.listScenarios()')) == ['Baseline','Tab A','Tab B']
+            # Repeated transactions must retain both tabs' updates without timing sleeps.
+            expected_names={'Baseline','Tab A','Tab B'}
+            for i in range(30):
+                for tab,name in [(page,'Concurrent A '+str(i)),(other,'Concurrent B '+str(i))]:
+                    tab.evaluate('name=>{window.pendingScenario=BrowserPlanStore.saveScenario(name,PlanState.get());}',name)
+                    expected_names.add(name)
+                for tab in [page,other]:tab.evaluate('()=>window.pendingScenario')
+                for tab in [page,other]:
+                    assert set(tab.evaluate('async()=>(await BrowserPlanStore.listScenarios()).map(s=>s.name)'))==expected_names
+
             page.evaluate('async()=>{const c=structuredClone(PlanState.get());c.assumptions.desiredMonthlyIncome=3400;await AppStorage.save(c);}')
             other.wait_for_function('PlanState.get().assumptions.desiredMonthlyIncome===3400')
             # Imported names must remain inert in HTML-rendered details and timeline.
@@ -107,13 +127,24 @@ with tempfile.TemporaryDirectory(prefix='retirement-static-') as directory:
             assert legacy_page.evaluate('JSON.parse(localStorage.getItem("retirement-config-v1")).assumptions.desiredMonthlyIncome') == 3200
             assert legacy_page.evaluate('async()=>(await BrowserPlanStore.listScenarios())[0].name') == 'Legacy'
             legacy.close()
-            # Plans from the earlier IndexedDB build migrate into localStorage without data loss.
+            # Existing v1.0.2 localStorage plans/scenarios migrate once; originals remain intact.
+            migration_local=browser.new_context();m=migration_local.new_page();m.goto(project+'/runtime-config.js')
+            m.evaluate('''c=>{const scope='retirement-'+encodeURIComponent('/Retirement-Calculator/');
+              localStorage.setItem(scope+'-state-v3',JSON.stringify({schemaVersion:2,config:c,scenarios:[{name:'Local plan',config:c}],backups:[{file:'before-upgrade.json',config:c,size:0,modified:'2026-09-09T00:00:00Z'}]}));}''',fixture)
+            loaded(m,project+'/index.html')
+            m.evaluate('async()=>{const c=structuredClone(PlanState.get());c.assumptions.desiredMonthlyIncome=3600;await AppStorage.save(c);}')
+            m.reload();m.wait_for_function('PlanState.get()?.assumptions.desiredMonthlyIncome===3600')
+            assert m.evaluate('async()=>(await BrowserPlanStore.listScenarios())[0].name')=='Local plan'
+            assert 'before-upgrade.json' in m.evaluate('async()=>(await BrowserPlanStore.listBackups()).map(b=>b.file)')
+            assert m.evaluate('JSON.parse(localStorage.getItem(BrowserPlanStore.stateKey)).config.assumptions.desiredMonthlyIncome')==3200
+            migration_local.close()
+            # Plans from the earlier IndexedDB build migrate without data loss.
             migration=browser.new_context();migrating=migration.new_page();migrating.goto(project+'/runtime-config.js')
             migrating.evaluate('''async c=>{const scope='retirement-'+encodeURIComponent('/Retirement-Calculator/');await new Promise((resolve,reject)=>{const r=indexedDB.open(scope,1);r.onupgradeneeded=()=>r.result.createObjectStore('state');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,tx=db.transaction('state','readwrite');tx.objectStore('state').put({schemaVersion:2,config:c,scenarios:[{name:'Database plan',config:c}],backups:[]},'plan');tx.oncomplete=()=>{db.close();resolve();};};});}''',fixture)
             loaded(migrating,project+'/index.html')
             assert migrating.evaluate('PlanState.get().assumptions.desiredMonthlyIncome')==3200
             migrating.evaluate('()=>AppStorage.save(PlanState.get())')
-            assert migrating.evaluate('JSON.parse(localStorage.getItem(BrowserPlanStore.stateKey)).config.assumptions.desiredMonthlyIncome')==3200
+            assert migrating.evaluate('async()=>(await BrowserPlanStore.readConfig()).assumptions.desiredMonthlyIncome')==3200
             assert migrating.evaluate('async()=>(await BrowserPlanStore.listScenarios())[0].name')=='Database plan'
             migration.close()
             assert not errors, errors

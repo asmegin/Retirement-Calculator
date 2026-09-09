@@ -46,12 +46,17 @@
     });return database;
   }
   async function read(){
+    if(location.protocol!=='file:'){
+      const db=await openDatabase();
+      const current=await new Promise((resolve,reject)=>{const request=db.transaction('state').objectStore('state').get('plan-v3');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+      if(current){if(current.schemaVersion!==2||!current.config||!Array.isArray(current.scenarios)||!Array.isArray(current.backups))throw new Error('Unsupported browser plan format. Import a valid plan.');return current;}
+    }
     const state=await local('get',stateKey);
     if(state){
       if(state.schemaVersion!==2||!state.config||!Array.isArray(state.scenarios)||!Array.isArray(state.backups))throw new Error('Unsupported browser plan format. Import a valid plan.');
       return state;
     }
-    // Read-only migration from the earlier IndexedDB release; all new writes use localStorage.
+    // Retain the earlier records unchanged when migrating to transactional storage.
     if(location.protocol!=='file:'&&root.indexedDB){
       const db=await openDatabase();
       const old=await new Promise((resolve,reject)=>{const request=db.transaction('state').objectStore('state').get('plan');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
@@ -61,16 +66,29 @@
   }
   function mutate(action){
     const run=async()=>{
-      // Yield a task at lock boundaries so cross-process localStorage caches receive updates.
-      await new Promise(resolve=>setTimeout(resolve,0));
+      if(location.protocol!=='file:'){
+        const seed=await read(),db=await openDatabase();let saved;
+        const value=await new Promise((resolve,reject)=>{
+          const tx=db.transaction('state','readwrite'),objects=tx.objectStore('state');let value,failure;
+          tx.oncomplete=()=>resolve(value);
+          tx.onabort=()=>reject(failure||new Error('Browser storage could not save your changes. '+(tx.error?.message||'The transaction was aborted.')));
+          tx.onerror=()=>{}; // The abort handler reports the failed transaction once.
+          const request=objects.get('plan-v3');
+          request.onsuccess=()=>{
+            try{
+              // Read and write inside one transaction: locks alone do not refresh
+              // another browser process's localStorage cache.
+              saved=copy(request.result||seed);value=action(saved);objects.put(saved,'plan-v3');
+            }catch(error){failure=error.code==='PLAN_VALIDATION'?error:new Error('Browser storage could not save your changes. '+error.message);tx.abort();}
+          };
+        });
+        channel?.postMessage(saved.config);return value;
+      }
       const state=copy(await read()),value=action(state);
       await local('set',stateKey,state);
-      channel?.postMessage(state.config);
-      await new Promise(resolve=>setTimeout(resolve,0));
       return value;
     };
-    const locked=()=>location.protocol!=='file:'&&navigator.locks?navigator.locks.request(stateKey,run):run();
-    const result=queue.then(locked);queue=result.catch(()=>{});return result;
+    const result=queue.then(run);queue=result.catch(()=>{});return result;
   }
   function snapshot(state){
     const entry={file:'local-'+Date.now()+'-'+(crypto.randomUUID?crypto.randomUUID():Array.from(crypto.getRandomValues(new Uint32Array(4)),n=>n.toString(16)).join('-'))+'.json',modified:new Date().toISOString(),size:JSON.stringify(state.config).length,config:copy(state.config)};

@@ -7,7 +7,7 @@ Reviewed 2026-09-08 against the requested hybrid/public application checklist. T
 | Requirement | Result |
 | --- | --- |
 | Relative paths and explicit deployment mode | Shared client works at root/project paths and from extracted files. Static mode makes no API or Socket.IO requests. Docker retains authoritative REST persistence and live sync. |
-| Static localStorage | New state writes go to a project-specific localStorage record. Earlier IndexedDB and legacy browser plans migrate on first save without deleting originals. Web Locks serialize supported multi-tab writes. |
+| Static browser storage | New state writes use project-specific IndexedDB transactions. Earlier localStorage and IndexedDB plans migrate on first save without deleting originals. Atomic read/modify/write transactions preserve concurrent tab updates. |
 | iOS home screen | Apple standalone/status/title tags, 180 px touch icon, 192/512 px PNG icons and a relative web manifest are included in every generated view. |
 | Discreet display | Eye toggle masks amounts, numeric inputs, monetary selectors, table figures and charts. The preference persists locally; calculations and exports retain actual values. |
 | Optional encrypted backups | Versioned plain JSON or AES-256-GCM encrypted envelopes; automatic detection, password dialog and legacy raw JSON compatibility. |
@@ -56,7 +56,7 @@ The container runs without root privileges and supports read-only root filesyste
 
 - This is a shared household server, not a public multi-tenant service. Use authentication plus HTTPS or a private VPN for remote access. Configure any internet-facing reverse proxy for appropriate access and rate limits.
 - Browser display masking is not encryption. Anyone with access to the browser profile or server data directory can read unencrypted saved state. Encrypted exports still depend on password strength.
-- Browser storage can be cleared or fill up. File pages and browsers without Web Locks should be edited in one window at a time. A failed storage write leaves the last saved record intact and reports failure.
+- Browser storage can be cleared or fill up. Offline file pages should be edited in one window at a time. Hosted browser plans use IndexedDB transactions across tabs. A failed storage write leaves the last saved record intact and reports failure.
 - No site was published and no GitHub repository visibility was changed during this local implementation. Automatic Pages deployment begins after the updated workflow is pushed and Pages is configured to use GitHub Actions.
 - Docker runtime checks require a Docker-capable runner. Local tests cannot certify an Unraid host or physical iOS installation.
 
