@@ -115,6 +115,55 @@ test('rental comparison respects per-property selection and rejects invalid tax 
   const r=E.compareRentalSales(c,{propertyIndex:1,startYear:2026});assert.equal(r.propertyIndex,1);assert.equal(r.propertyName,'Rental');
   c.realEstate[1].uccPool=90000;assert.throws(()=>E.compareRentalSales(c,{propertyIndex:1,startYear:2026}),/UCC/);
 });
+
+test('rental spending ranks spendable cash rather than unsold equity and compares capacity, not the goal',()=>{
+  const c=fixture();c.assumptions.desiredMonthlyIncome=6000;
+  c.accounts=[{name:'Cash',owner:'P0',type:'TFSA',balance:72000,growthRate:0}];
+  c.realEstate=[{name:'Rental',type:'rental',value:300000,appreciation:0,acb:300000,buildingAcb:240000,buildingSalePercent:80,uccPool:240000,sellingCostPct:0,grossRentMonthly:0}];
+  const original=JSON.stringify(c),r=E.compareRentalSales(c,{propertyIndex:0,startYear:2026});
+  near(r.rows[0].monthlySpend,1000,2);
+  assert.equal(r.bestSpending.year,2026);
+  near(r.bestSpending.monthlySpend,372000/72,2);
+  assert.equal(r.bestSpending.spendingChange,r.bestSpending.monthlySpend-r.rows[0].monthlySpend);
+  assert.equal(r.bestSpending.funded,false); // Useful even when the entered goal is too high.
+  for(const row of r.rows){
+    const candidate=structuredClone(c);candidate.realEstate[0].saleYear=row.year;candidate.realEstate[0].ccaEnabled=row.cca;
+    candidate.assumptions.desiredMonthlyIncome=row.monthlySpend;
+    assert.ok(simulate(candidate).years.every(y=>y.unfunded<=1),row.label);
+  }
+  assert.equal(JSON.stringify(c),original);
+});
+
+test('rental spending preserves actual lifespan settings and clears only alternative withdrawal schedules',()=>{
+  const c=fixture();c.incomes[0].deathAge=66;c.assumptions.estate={enabled:false};
+  c.assumptions.withdrawalPlan={2026:[30000,0]};
+  c.accounts=[{name:'RRSP',owner:'P0',type:'RRSP',balance:300000,growthRate:0}];
+  c.realEstate=[{name:'Rental',type:'rental',value:200000,acb:200000,buildingAcb:160000,buildingSalePercent:80,uccPool:140000,ccaEnabled:true,grossRentMonthly:1000}];
+  const r=E.compareRentalSales(c,{propertyIndex:0,startYear:2026,compareCCA:true});
+  assert.equal(r.endYear,2031);
+  assert.equal(r.rows[0].monthlySpend,Math.floor(E.maxSustainableSpend(c,{startYear:2026,fastSolve:false})));
+  const candidate=structuredClone(c),row=r.bestSpending;
+  if(row!==r.rows[0])delete candidate.assumptions.withdrawalPlan;
+  Object.assign(candidate.realEstate[0],{saleYear:row.year,ccaEnabled:row.cca});
+  candidate.assumptions.desiredMonthlyIncome=row.monthlySpend;
+  assert.ok(simulate(candidate).years.every(y=>y.unfunded<=1));
+  assert.equal(candidate.assumptions.estate.enabled,false);
+});
+
+test('rental spending handles category scaling and exposes the search ceiling',()=>{
+  const c=fixture();c.assumptions.spendingMode='categories';
+  c.assumptions.spendingCategories=[{name:'Living',amount:1000,frequency:'monthly',startAge:65,endAge:999,inflation:0}];
+  c.accounts=[{name:'Cash',owner:'P0',type:'TFSA',balance:72000,growthRate:0}];
+  c.realEstate=[{name:'Rental',type:'rental',value:120000,appreciation:0,acb:120000,buildingAcb:120000,uccPool:120000,sellingCostPct:0}];
+  const r=E.compareRentalSales(c,{propertyIndex:0,startYear:2026}),row=r.bestSpending;
+  near(row.monthlySpend,192000/72,2);
+  c.realEstate[0].saleYear=row.year;
+  assert.ok(E.simulate(c,{startYear:2026,spendingScale:row.monthlySpend/1000}).years.every(y=>y.unfunded<=1));
+  c.accounts[0].balance=100000000;
+  assert.equal(E.compareRentalSales(c,{propertyIndex:0,startYear:2026}).rows[0].spendingAtLimit,true);
+  c.assumptions.spendingCategories=[];
+  assert.throws(()=>E.compareRentalSales(c,{propertyIndex:0,startYear:2026}),/positive spending category/);
+});
 test('selling rental enables earlier retirement and returned sale settings reproduce funding',()=>{
   const c=fixture();c.incomes[0].targetRetireAge=67;c.assumptions.desiredMonthlyIncome=2000;
   c.realEstate=[{name:'Rental',type:'rental',value:500000,appreciation:0,acb:500000,uccPool:500000,sellingCostPct:0}];

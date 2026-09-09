@@ -15,10 +15,14 @@ def check_comparisons(page,base):
     saved=page.evaluate('PlanState.get()')
     tool=page.locator('[data-comparison=rental]')
     tool.get_by_role('button',name='Calculate best sale years',exact=True).click()
-    tool.locator('tbody tr').first.wait_for(timeout=60000)
-    assert tool.locator('tbody tr').count()==15
+    tool.locator('.comparison-spending-table tbody tr').first.wait_for(timeout=60000)
+    assert tool.locator('.comparison-spending-table tbody tr').count()==15
+    assert 'Most retirement spending' in tool.inner_text()
+    assert 'Estimated total:' in tool.locator('.spending-recommendation').inner_text()
+    assert not tool.locator('.comparison-supporting').evaluate('(el)=>el.open')
+    assert 'Spending change /mo' in tool.locator('.comparison-spending-table').inner_text()
     assert tool.locator('.delta-positive,.delta-negative').count()>0
-    tool.locator('tbody tr').nth(2).get_by_role('button',name='Review',exact=True).click()
+    tool.locator('.comparison-spending-table tr[data-option-label="Sell '+str(time.localtime().tm_year)+'"]').get_by_role('button',name='Review',exact=True).click()
     assert 'CCA recapture (100% taxable): $50,000' in tool.locator('.comparison-detail').inner_text()
     tool.get_by_role('button',name='Use this sale and CCA setting',exact=True).click()
     assert page.evaluate('config.realEstate[0].saleYear')==time.localtime().tm_year
@@ -28,15 +32,15 @@ def check_comparisons(page,base):
     page.reload();page.wait_for_selector('[data-comparison=rental]')
     assert page.evaluate('config.realEstate[0].saleYear')==time.localtime().tm_year
     page.evaluate('c=>AppStorage.save(c)',saved)
-    tool.get_by_role('button',name='Calculate best sale years',exact=True).click();tool.locator('tbody tr').first.wait_for(timeout=60000)
+    tool.get_by_role('button',name='Calculate best sale years',exact=True).click();tool.locator('.comparison-spending-table tbody tr').first.wait_for(timeout=60000)
     page.set_viewport_size({'width':390,'height':844})
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
     page.screenshot(path=str(Path(tempfile.gettempdir())/'retirement-rental-comparison-mobile.png'),full_page=True)
     page.set_viewport_size({'width':1512,'height':1000})
-    page.goto(base+'/withdrawals.html?compare=1');tool=page.locator('[data-comparison=withdrawals]');tool.locator('tbody tr').first.wait_for(timeout=60000)
-    assert tool.locator('tbody tr').count()==6
+    page.goto(base+'/withdrawals.html?compare=1');tool=page.locator('[data-comparison=withdrawals]');tool.locator('.comparison-spending-table tbody tr').first.wait_for(timeout=60000)
+    assert tool.locator('.comparison-spending-table tbody tr').count()==6
     assert 'Most monthly spending' in tool.inner_text()
-    tool.locator('tbody tr').nth(2).get_by_role('button',name='Review',exact=True).click()
+    tool.locator('.comparison-spending-table tbody tr').nth(2).get_by_role('button',name='Review',exact=True).click()
     tool.get_by_role('button',name='Use this withdrawal order',exact=True).click()
     assert page.evaluate('config.assumptions.withdrawalStrategy')=='rrsp-first'
     assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')==saved

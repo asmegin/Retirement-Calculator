@@ -120,7 +120,7 @@ jobs:
           else
             gh release create "$RELEASE_TAG" \
               --verify-tag \
-              --title "Retirement Calculator ${RELEASE_TAG#v}" \
+              --title "Canadian Retirement Calculator ${RELEASE_TAG#v}" \
               --notes-file "docs/releases/$RELEASE_TAG.md" \
               dist/retirement-calculator-standalone.zip dist/SHA256SUMS.txt
           fi

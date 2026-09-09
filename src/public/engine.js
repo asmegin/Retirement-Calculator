@@ -1651,10 +1651,13 @@
     var start=opts.startYear||new Date().getFullYear();
     if(property.saleYear&&property.saleYear<start)throw new Error('This rental has a past sale year. Update Properties to describe what you own today.');
     if(property.acb<=0||property.buildingAcb>property.acb||property.uccPool>property.buildingAcb)throw new Error('Check total cost, building cost and remaining UCC under Properties. UCC must not exceed building cost, and building cost must not exceed total cost.');
-    // All alternatives include the same terminal-tax assumptions, including holding.
+    if(cfg.assumptions.spendingMode==='categories'&&Planning.spendingBaseline(cfg.assumptions.spendingCategories)<=0)throw new Error('Add a positive spending category before comparing retirement spending.');
+    // Spending must reproduce the plan after Apply, including its estate settings.
+    // Tax/legacy illustrations separately include terminal tax for the keep option.
+    var spendingEstate=clone(cfg.assumptions.estate),spendingBaseline=simulate(cfg,{startYear:start});
     cfg.assumptions.estate.enabled=true;
     var baseline=simulate(cfg,{startYear:start}),rows=[],candidates=[{label:'Current settings',year:property.saleYear,cca:property.ccaEnabled},{label:'Keep through plan',year:0,cca:property.ccaEnabled}];
-    for(var year=Math.max(start,property.purchaseYear||start);year<=baseline.endYear;year++){
+    for(var year=Math.max(start,property.purchaseYear||start);year<=spendingBaseline.endYear;year++){
       candidates.push({label:'Sell '+year,year:year,cca:property.ccaEnabled});
       if(opts.compareCCA)candidates.push({label:'Sell '+year+'; no future CCA',year:year,cca:false});
     }
@@ -1663,11 +1666,14 @@
       var c=clone(cfg);c.realEstate[index].saleYear=choice.year;c.realEstate[index].ccaEnabled=choice.cca;
       if(i!==0)delete c.assumptions.withdrawalPlan;
       var r=i===0?baseline:simulate(c,{startYear:start}),saleRow=r.years.find(function(y){return y.year===choice.year;}),event=saleRow&&saleRow.saleEvents.find(function(s){return s.name===property.name;});
-      rows.push({label:choice.label,year:choice.year,cca:choice.cca,tax:totalTax(r),estate:r.finalNetWorthReal,funded:isFunded(r),shortfallYear:(r.years.find(function(y){return y.unfunded>1;})||{}).year||null,benefits:r.lifetimeBenefits,sale:event||null,saleIncomeTax:event?saleRow.saleIncomeTax:null,taxChange:totalTax(r)-totalTax(baseline),estateChange:r.finalNetWorthReal-baseline.finalNetWorthReal});
+      c.assumptions.estate=clone(spendingEstate);
+      var spendingResult=i===0?spendingBaseline:simulate(c,{startYear:start});
+      var monthlySpend=Math.floor(maxSustainableSpend(c,{startYear:start,fastSolve:false}));
+      rows.push({label:choice.label,year:choice.year,cca:choice.cca,monthlySpend:monthlySpend,spendingChange:i===0?0:monthlySpend-rows[0].monthlySpend,spendingAtLimit:monthlySpend>=39999,tax:totalTax(r),estate:r.finalNetWorthReal,funded:isFunded(spendingResult),shortfallYear:(spendingResult.years.find(function(y){return y.unfunded>1;})||{}).year||null,benefits:r.lifetimeBenefits,sale:event||null,saleIncomeTax:event?saleRow.saleIncomeTax:null,taxChange:totalTax(r)-totalTax(baseline),estateChange:r.finalNetWorthReal-baseline.finalNetWorthReal});
       if(opts.onProgress)opts.onProgress({evaluated:i+1,maxEvaluations:candidates.length});
     });
     var funded=rows.filter(function(r){return r.funded;});
-    return {rows:rows,propertyIndex:index,propertyName:property.name,startYear:start,endYear:baseline.endYear,includesTerminalTax:true,bestTax:funded.reduce(function(a,b){return !a||b.tax<a.tax?b:a;},null),bestEstate:funded.reduce(function(a,b){return !a||b.estate>a.estate?b:a;},null)};
+    return {rows:rows,propertyIndex:index,propertyName:property.name,startYear:start,endYear:spendingBaseline.endYear,includesTerminalTax:true,bestSpending:rows.reduce(function(a,b){return b.monthlySpend>a.monthlySpend?b:a;},rows[0]),bestTax:funded.reduce(function(a,b){return !a||b.tax<a.tax?b:a;},null),bestEstate:funded.reduce(function(a,b){return !a||b.estate>a.estate?b:a;},null)};
   }
 
   function monteCarloRun(cfg, runs, seed, onProgress, done) {

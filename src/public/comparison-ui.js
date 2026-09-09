@@ -5,11 +5,13 @@
   const explanations={'tfsa-first':'Use tax-free savings first, then non-registered investments, then RRSPs. This limits taxable withdrawals now but can leave larger registered balances for later.', 'rrsp-first':'Use RRSPs first, then non-registered investments, then TFSAs. Earlier registered withdrawals can spread taxable income across more years, at the cost of paying tax sooner.', 'taxable-first':'Use non-registered investments first, then RRSPs, then TFSAs. The taxable portion follows your investment cost basis.', 'min-tax':'Draw registered savings toward the first federal bracket, then use other accounts for spending. This is a yearly rule; the lowest current bracket does not guarantee the lowest lifetime tax.', 'oas-smart':'Draw registered savings toward the OAS recovery threshold, then use other accounts. Other taxable income can still cause OAS recovery.'};
   const copy=v=>JSON.parse(JSON.stringify(v)),key=v=>JSON.stringify(E.normalizeConfig(v));
   function el(tag,text,cls){const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;}
+  const signedMoney=value=>(value>0?'+':value<0?'\u2212':'')+money(Math.abs(value));
+  const spendingText=row=>money(row.monthlySpend)+(row.spendingAtLimit?'+':'')+'/mo';
   function delta(value,good){return el('span',(Math.abs(value)<.5?'No change':(value>0?'+':'−')+money(Math.abs(value)))+(Math.abs(value)<.5?'':good?' · better':' · worse'),Math.abs(value)<.5?'delta-neutral':good?'delta-positive':'delta-negative');}
   function mount(parent,{task,getConfig,onApply}){
     const rental=task==='rental',section=el('section',null,'card comparison-tool');section.dataset.comparison=task;
     section.append(el('h2',rental?'When should I sell my rental?':'Calculate the best withdrawal options'));
-    section.append(el('p',rental?'Compare keeping your rental with selling at the start of each projected year. Rental income stops on sale; tax, CCA recapture, debt, lost rent and invested proceeds flow through your household plan.':'This is the Withdrawal strategy finder used by the withdrawal order control. Compare all five orders at your current spending goal, then use the annual schedule search below for finer tax and estate adjustments.','section-description'));
+    section.append(el('p',rental?'Find which sale year supports the most after-tax retirement spending each month. Compare the extra monthly spending with your current settings, including keeping the rental. Tax and inheritance trade-offs are available below the spending results.':'This is the Withdrawal strategy finder used by the withdrawal order control. Compare all five orders at your current spending goal, then use the annual schedule search below for finer tax and estate adjustments.','section-description'));
     const controls=el('div',null,'form-grid'),property=el('select'),cca=el('input');cca.type='checkbox';cca.checked=true;
     if(rental){
       property.setAttribute('aria-label','Rental property to compare');
@@ -29,6 +31,10 @@
     if(run.disabled)status.textContent='Add a rental property above to compare sale dates.';
     function review(row,result){
       let panel=output.querySelector('.comparison-detail');if(!panel){panel=el('div',null,'comparison-detail');output.append(panel);}panel.replaceChildren(el('h3',rental?row.label:row.label==='Current settings'?row.label:names[row.strategy]));
+      if(rental){
+        panel.append(el('p','Estimated after-tax retirement spending: '+spendingText(row)+' in today\u2019s dollars.'),el('p',signedMoney(row.spendingChange)+'/mo versus current settings. Applying keeps your spending goal; review it separately after choosing a sale date.'));
+        if(row.year)panel.append(el('p','Ages in the sale year: '+snapshot.incomes.slice(0,snapshot.assumptions.householdType==='single'?1:2).map(p=>p.name+' '+(row.year-p.birthYear)).join(', ')+'.'));
+      }
       if(rental&&row.sale){
         const s=row.sale;
         [['Sale price',s.grossPrice],['Selling costs',s.sellingCosts],['Mortgage discharged',s.mortgageDischarged],['Cash before income tax',s.netCash],['Capital gain / land loss',s.capitalGain],['Taxable capital gain (50%)',s.taxableGain],['CCA recapture (100% taxable)',s.ccaRecapture],['Terminal loss deduction',s.terminalLoss],['Estimated household sale-income tax, including OAS recovery',row.saleIncomeTax]].forEach(([label,value])=>panel.append(el('p',label+': '+money(value))));
@@ -48,20 +54,59 @@
       panel.scrollIntoView({behavior:'smooth',block:'nearest'});
     }
     function show(result){
-      output.replaceChildren();const cards=el('div',null,'comparison-cards');
-      [['Lowest lifetime tax',result.bestTax],['Highest ending net worth',result.bestEstate],...(!rental?[['Most monthly spending',result.bestSpending]]:[])].forEach(([title,row])=>{
+      output.replaceChildren();
+      const base=result.rows[0],cards=el('div',null,'comparison-cards');
+      function reviewButton(row){const b=el('button','Review option','btn ghost');b.type='button';b.onclick=()=>review(row,result);return b;}
+      function metricCard(title,row,measure){
         const card=el('div',null,'metric-card');card.append(el('h3',title));
-        if(row){const measure=title==='Lowest lifetime tax'?'tax':title==='Most monthly spending'?'monthlySpend':'estate';card.append(el('strong',money(row[measure])+(measure==='monthlySpend'?'/mo':'')),el('p',rental?row.label:row.label==='Current settings'?row.label:names[row.strategy]));const difference=row[measure]-result.rows[0][measure];card.append(delta(difference,measure==='tax'?difference<0:difference>0));const b=el('button','Review option','btn ghost');b.onclick=()=>review(row,result);card.append(b);}else card.append(el('p','No tested option funds your current spending.'));
-        cards.append(card);
-      });output.append(cards);
-      const scroll=el('div',null,'data-scroll'),table=el('table'),head=el('thead'),hr=el('tr');
-      const headers=rental?['Option','Future CCA','Lifetime tax','Tax change','Ending net worth','Net worth change','Spending funded','Review']:['Withdrawal order','Lifetime tax','Tax change','Ending net worth','Net worth change','Sustainable spending /mo','Spending change /mo','Spending funded','Review'];
-      headers.forEach(h=>{const th=el('th',h);th.scope='col';hr.append(th);});head.append(hr);table.append(head);const body=el('tbody'),base=result.rows[0];
-      result.rows.forEach(row=>{
-        const tr=el('tr'),values=[rental?row.label:row.label==='Current settings'?row.label:names[row.strategy],...(rental?[row.cca?'Claim CCA':'No new claims']:[]),money(row.tax),delta(row.tax-base.tax,row.tax<base.tax),money(row.estate),delta(row.estate-base.estate,row.estate>base.estate),...(!rental?[money(row.monthlySpend),delta(row.monthlySpend-base.monthlySpend,row.monthlySpend>base.monthlySpend)]:[]),row.funded?'Yes':'Shortfall '+row.shortfallYear];
-        values.forEach(v=>{const td=el('td');td.append(v instanceof Node?v:document.createTextNode(v));tr.append(td);});const td=el('td'),b=el('button','Review','btn ghost');b.onclick=()=>review(row,result);td.append(b);tr.append(td);body.append(tr);
-      });table.append(body);scroll.append(table);output.append(scroll);
-      status.textContent='Compared '+result.rows.length+' options. Changes are versus Current settings. Tax is in future dollars; ending net worth is in today’s dollars. '+(rental?'Every option includes terminal tax at the configured lifespans so keeping a rental also recognizes its future tax liability. Alternatives recalculate withdrawals without a saved annual schedule; applying clears that schedule. ':'Tax and net worth recommendations fund the current spending goal. ')+'Best among the options tested, under your assumptions.';
+        if(row){
+          card.append(el('strong',measure==='monthlySpend'?spendingText(row):money(row[measure])),el('p',rental?row.label:row.label==='Current settings'?row.label:names[row.strategy]));
+          const difference=row[measure]-base[measure];
+          card.append(rental&&measure==='tax'?el('span',signedMoney(difference)+' in tax','delta-neutral'):delta(difference,measure==='tax'?difference<0:difference>0));
+          if(rental)card.append(el('p','Spending capacity: '+spendingText(row)+' ('+signedMoney(row.spendingChange)+'/mo).'));
+          card.append(reviewButton(row));
+        }else card.append(el('p','No tested option funds your current spending.'));
+        return card;
+      }
+      const supporting=el('details',null,'comparison-supporting');
+      if(rental){
+        const current=el('div',null,'metric-card');current.append(el('h3','Current spending capacity'),el('strong',spendingText(base)),el('p','After tax, in today\u2019s dollars, using your current sale and CCA settings.'),reviewButton(base));cards.append(current);
+        const best=result.bestSpending,recommendation=el('div',null,'metric-card spending-recommendation');
+        recommendation.append(el('h3','Most retirement spending'));
+        const gain=el('strong',signedMoney(best.spendingChange)+'/mo',best.spendingChange>0?'delta-positive':'delta-neutral');
+        recommendation.append(gain,el('p',best.monthlySpend>0?best.label:'No tested option supports positive spending throughout the plan.'),el('p','Estimated total: '+spendingText(best)),el('p',best.spendingChange>0?'Extra spending capacity versus current settings.':'No tested change increases spending capacity.'),reviewButton(best));cards.append(recommendation);
+        output.append(cards,el('p','Your entered spending goal: '+money(snapshot.assumptions.spendingMode==='categories'?E.Planning.spendingBaseline(snapshot.assumptions.spendingCategories)/12:snapshot.assumptions.desiredMonthlyIncome)+'/mo. Changes below compare sustainable capacity with current settings, not with this goal.','inline-help'));
+        output.append(el('p','Spending follows your retirement ages, spending phases or category schedule, and current lifespan/estate settings through '+result.endYear+'. It includes lost rent, sale costs, mortgage repayment, sale tax and invested proceeds. No minimum inheritance is reserved. This is an estimate under your return assumptions, not a probability of success; small differences between years may not be meaningful.'));
+        if(snapshot.assumptions.applySpendingBeforeRetirement)output.append(el('p','Your plan also applies spending before retirement, so this estimate scales working-year spending too.','inline-help'));
+        if(result.rows.some(row=>row.spendingAtLimit))output.append(el('p','Some options reach the $40,000/month search ceiling. Their true spending capacity may be higher; the search cannot distinguish options above that limit.','inline-help'));
+        const checks=[];const selected=E.normalizeConfig(snapshot).realEstate[result.propertyIndex];
+        if(selected.buildingAcb===selected.acb&&selected.buildingSalePercent===100)checks.push('All purchase cost and sale proceeds are allocated to the building. Confirm that excluding land is appropriate; this allocation affects CCA recapture and gains.');
+        if(selected.otherAnnualInterest>0&&selected.mortgage>0)checks.push('Other deductible interest is added to the interest calculated from this mortgage. Confirm it is a separate expense, so mortgage interest is not counted twice.');
+        if(checks.length){const notice=el('div',null,'notice comparison-input-checks');notice.append(el('h3','Review inputs before relying on the result'));checks.forEach(text=>notice.append(el('p',text)));output.append(notice);}
+        supporting.append(el('summary','Tax and inheritance trade-offs'),el('p','These figures use the current spending goal, not each option\u2019s maximum spending. Lower lifetime tax can result from lower income and is not necessarily a better retirement. Net worth includes property you may never spend. Tax totals are in future dollars; ending net worth is in today\u2019s dollars. Both illustrations include terminal tax at the configured lifespans, even if estate modelling is off in your saved plan.'));
+        const alternatives=el('div',null,'comparison-cards');alternatives.append(metricCard('Lowest lifetime tax',result.bestTax,'tax'),metricCard('Highest ending net worth',result.bestEstate,'estate'));supporting.append(alternatives);
+      }else{
+        cards.append(metricCard('Lowest lifetime tax',result.bestTax,'tax'),metricCard('Highest ending net worth',result.bestEstate,'estate'),metricCard('Most monthly spending',result.bestSpending,'monthlySpend'));output.append(cards);
+      }
+      function makeTable(rows,tradeoffs=false){
+        const scroll=el('div',null,'data-scroll'),table=el('table'),head=el('thead'),hr=el('tr');
+        table.className=tradeoffs?'comparison-tradeoff-table':'comparison-spending-table';
+        const headers=rental?(tradeoffs?['Option','Lifetime tax','Tax change','Ending net worth','Net worth change']:['Option','Future CCA','Sustainable spending /mo','Spending change /mo','Current goal funded','Review']):['Withdrawal order','Lifetime tax','Tax change','Ending net worth','Net worth change','Sustainable spending /mo','Spending change /mo','Spending funded','Review'];
+        headers.forEach(h=>{const th=el('th',h);th.scope='col';hr.append(th);});head.append(hr);table.append(head);const body=el('tbody');
+        rows.forEach(row=>{
+          const tr=el('tr');tr.dataset.optionLabel=row.label;
+          const wealth=[money(row.tax),rental?el('span',signedMoney(row.tax-base.tax),'delta-neutral'):delta(row.tax-base.tax,row.tax<base.tax),money(row.estate),delta(row.estate-base.estate,row.estate>base.estate)];
+          const spending=[spendingText(row),delta(row.monthlySpend-base.monthlySpend,row.monthlySpend>base.monthlySpend),row.funded?'Yes':'Shortfall '+row.shortfallYear];
+          const values=rental?[row.label,...(tradeoffs?wealth:[row.cca?'Claim CCA':'No new claims',...spending])]:[row.label==='Current settings'?row.label:names[row.strategy],...wealth,...spending];
+          values.forEach(v=>{const td=el('td');td.append(v instanceof Node?v:document.createTextNode(v));tr.append(td);});
+          if(!tradeoffs){const td=el('td'),b=el('button','Review','btn ghost');b.type='button';b.onclick=()=>review(row,result);td.append(b);tr.append(td);}
+          body.append(tr);
+        });table.append(body);scroll.append(table);return scroll;
+      }
+      const ranked=rental?[base,...result.rows.slice(1).sort((a,b)=>b.monthlySpend-a.monthlySpend)]:result.rows;
+      output.append(makeTable(ranked));
+      if(rental){supporting.append(makeTable(ranked,true));output.append(supporting);}
+      status.textContent='Compared '+result.rows.length+' options. Changes are versus Current settings. '+(rental?'Sale options are ranked by after-tax monthly spending in today\u2019s dollars. Alternatives recalculate withdrawals without a saved annual schedule; applying clears that schedule. ':'Tax is in future dollars; ending net worth is in today\u2019s dollars. Tax and net worth recommendations fund the current spending goal. ')+'Best among the options tested, under your assumptions.';
       if(rental){
         const notes=el('details'),summary=el('summary','Tax rules and comparison assumptions');notes.append(summary);
         notes.append(el('p','Rules checked September 8, 2026: 50% capital gains inclusion; recapture is ordinary income. CCA cannot create or increase an aggregate rental loss. Each building is treated as a separate CCA class emptied on sale. The search assumes an established, personally owned long-term rental, with no change of use or principal-residence exemption. Corporate rentals, flipped property, GST/HST, capital-loss carryovers and special elections are outside this comparison. Future brackets follow the app’s indexed tax assumptions.'));
