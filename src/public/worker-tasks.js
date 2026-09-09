@@ -7,7 +7,7 @@
     try{
       let result;
       if(kind==='comparison'){
-        const options={propertyIndex:data.propertyIndex,compareCCA:data.compareCCA,onProgress:progress};
+        const options={propertyIndex:data.propertyIndex,propertyIndices:data.propertyIndices,compareCCA:data.compareCCA,maxEvaluations:data.maxEvaluations,onProgress:progress};
         result=data.task==='rental'?RetireEngine.compareRentalSales(config,options):RetireEngine.compareWithdrawalOrders(config,options);
       }else if(kind==='retirement'){
         result=RetireEngine.solveRetirementAges(config,{fixedPerson:data.fixedPerson,maxYearGap:data.maxYearGap,preferClose:data.preferClose,sellRentals:data.sellRentals,onProgress:(tested,total)=>root.postMessage({id,tested,total})});

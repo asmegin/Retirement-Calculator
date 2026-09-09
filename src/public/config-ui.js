@@ -71,8 +71,8 @@ const schema = {
     fields: [
       {key:'name', label:'Name', type:'text'},
       {key:'type', label:'Type', type:'select', options:['principal','rental','heloc']},
-      {key:'value', label:'Estimated value', type:'number'},
-      {key:'appreciation', label:'Appreciation %/yr', type:'number', step:'0.1'},
+      {key:'value', label:'Estimated value', type:'number', propertyTypes:['principal','rental']},
+      {key:'appreciation', label:'Appreciation %/yr', type:'number', step:'0.1', propertyTypes:['principal','rental']},
       {key:'mortgage', label:'Balance owing', type:'number'},
       {key:'interestRate', label:'Interest rate %', type:'number', step:'0.01'},
       {key:'renewalYear', label:'Renewal year', type:'number'},
@@ -80,23 +80,23 @@ const schema = {
       {key:'paymentBiweekly', label:'Payment (biweekly)', type:'number', step:'0.01'},
       {key:'paymentMonthly', label:'Payment (monthly)', type:'number', step:'0.01'},
       {key:'payoffYear', label:'Expected payoff year', type:'number'},
-      {key:'vacancyRate', label:'Property vacancy % (blank = household)', type:'number'},
+      {key:'vacancyRate', label:'Property vacancy % (blank = household)', type:'number', propertyTypes:['rental']},
       {key:'ownerSplit', label:'Person 1 ownership % (blank = household)', type:'number'},
-      {key:'rentalName', label:'Attached rental name (blank = first rental)', type:'text'},
-      {key:'ccaRate', label:'CCA declining balance rate %', type:'number'},
-      {key:'grossRentMonthly', label:'Gross rent /mo', type:'number'},
-      {key:'annualPropertyTax', label:'Property tax /yr', type:'number'},
-      {key:'annualInsurance', label:'Insurance /yr', type:'number'},
-      {key:'annualMaintenance', label:'Maintenance /yr', type:'number'},
-      {key:'otherAnnualInterest', label:'Other deductible interest /yr', type:'number'},
-      {key:'acb', label:'ACB (price + improvements)', type:'number'},
-      {key:'buildingAcb',label:'Building cost excluding land',type:'number'},
-      {key:'buildingSalePercent',label:'Building share of sale proceeds %',type:'number'},
-      {key:'saleYear', label:'Sale year (0 = never)', type:'number'},
-      {key:'sellingCostPct', label:'Selling costs %', type:'number', step:'0.1'},
-      {key:'uccPool', label:'CCA pool remaining (UCC)', type:'number'},
-      {key:'ccaEnabled', label:'Claim CCA each year', type:'checkbox'},
-      {key:'attachToRental', label:'Funds the rental', type:'checkbox'},
+      {key:'rentalName', label:'Attached rental name (blank = first rental)', type:'text', propertyTypes:['heloc']},
+      {key:'ccaRate', label:'CCA declining balance rate %', type:'number', propertyTypes:['rental']},
+      {key:'grossRentMonthly', label:'Gross rent /mo', type:'number', propertyTypes:['rental']},
+      {key:'annualPropertyTax', label:'Property tax /yr', type:'number', propertyTypes:['rental']},
+      {key:'annualInsurance', label:'Insurance /yr', type:'number', propertyTypes:['rental']},
+      {key:'annualMaintenance', label:'Maintenance /yr', type:'number', propertyTypes:['rental']},
+      {key:'otherAnnualInterest', label:'Other deductible interest /yr', type:'number', propertyTypes:['rental']},
+      {key:'acb', label:'ACB (price + improvements)', type:'number', propertyTypes:['principal','rental']},
+      {key:'buildingAcb',label:'Building cost excluding land',type:'number', propertyTypes:['rental']},
+      {key:'buildingSalePercent',label:'Building share of sale proceeds %',type:'number', propertyTypes:['rental']},
+      {key:'saleYear', label:'Sale year (0 = never)', type:'number', propertyTypes:['principal','rental']},
+      {key:'sellingCostPct', label:'Selling costs %', type:'number', step:'0.1', propertyTypes:['principal','rental']},
+      {key:'uccPool', label:'CCA pool remaining (UCC)', type:'number', propertyTypes:['rental']},
+      {key:'ccaEnabled', label:'Claim CCA each year', type:'checkbox', propertyTypes:['rental']},
+      {key:'attachToRental', label:'Funds the rental', type:'checkbox', propertyTypes:['heloc']},
       {key:'interestDeductible', label:'Interest deductible', type:'checkbox'},
       {key:'reinvestOnPayoff', label:'Invest the payment once paid off', type:'checkbox'}
     ]
@@ -232,7 +232,6 @@ async function init() {
   const response=await AppStorage.fetch('/api/config'),body=await response.json();
   if(!response.ok)throw new Error(body.error||'Could not load your saved plan.');
   config = E.normalizeConfig(body);
-  config.assumptions.spendingMode='target';
   render();
   if (config.onboardingComplete === false || new URLSearchParams(location.search).has('wizard')) openWizard();
 }
@@ -251,7 +250,7 @@ function render() {
   if(page==='household')editor.appendChild(childcareSection());
   if(page==='accounts')editor.prepend(listSection('accounts'));
   if(page==='plan-settings')editor.append(advanced(phasesSection(),'Spending changes over time'),advanced(estateSection(),'Estate and survivor settings'));
-  if(page==='properties'){editor.appendChild(listSection('realEstate'));PlanComparison.mount(editor,{task:'rental',getConfig:()=>config,onApply:c=>{config=E.normalizeConfig(c);markSettingsDirty();render();toast('Sale and CCA settings applied. Save changes to keep them.');}});editor.append(advanced(debtComparisonSection(),'Compare extra debt payments with investing'));}
+  if(page==='properties')editor.appendChild(listSection('realEstate'));
   if(page==='pensions'){editor.appendChild(listSection('dbPensions'));editor.appendChild(advanced(earningsSection(),'CPP / QPP earnings history'));}
 }
 
@@ -370,6 +369,10 @@ function personFieldVisible(key){
   if(key==='name')return true;if(page==='employment')return employment.includes(key);if(page==='pensions')return pension.includes(key);
   return !employment.includes(key)&&!pension.includes(key);
 }
+function autofillRealEstate(item){
+  const merged=E.normalizeConfig({...config,realEstate:[item]}).realEstate[0];
+  Object.keys(merged).forEach(key=>{if(item[key]===undefined)item[key]=merged[key];});
+}
 function listSection(cat) {
   const spec=schema[cat],sec=document.createElement('div');sec.className='section';sec.dataset.category=cat;
   const h=document.createElement('h2');h.textContent=cat==='incomes'?({household:'People',accounts:'Contribution room and home buyer repayments','plan-settings':'Retirement ages',employment:'Work income',pensions:'Government pensions'}[page]):spec.title;sec.append(h);
@@ -381,11 +384,11 @@ function listSection(cat) {
     if(cat==='dbPensions')item.survivorPercent??=60;
     const wrapper=document.createElement('div');wrapper.className='setting-record';
     if(cat==='incomes'&&['accounts','plan-settings'].includes(page)){const title=document.createElement('h3');title.textContent=item.name;wrapper.append(title);}const row=document.createElement('div');row.className='item-row core-fields';const more=document.createElement('div');more.className='item-row advanced-fields';
-    (cat==='dbPensions'?[]:spec.fields).filter(f=>cat!=='incomes'||personFieldVisible(f.key)).filter(f=>!f.accountTypes||f.accountTypes.includes(item.type)).forEach(f=>{
+    (cat==='dbPensions'?[]:spec.fields).filter(f=>cat!=='incomes'||personFieldVisible(f.key)).filter(f=>!f.accountTypes||f.accountTypes.includes(item.type)).filter(f=>!f.propertyTypes||f.propertyTypes.includes(item.type)).forEach(f=>{
       if(f.key==='cppStartAge'&&item.cppPlan==='QPP')f={...f,options:Array.from({length:13},(_,k)=>60+k)};
       const node=field(f,item[f.key],v=>{
         if(cat==='incomes'&&f.key==='name'){const old=item.name;['accounts','dbPensions'].forEach(key=>config[key].forEach(a=>{if(a.owner===old)a.owner=v;}));}
-        item[f.key]=v;if(f.key==='type'||f.key==='cppPlan')render();
+        item[f.key]=v;if(cat==='realEstate'&&f.key==='type')autofillRealEstate(item);if(f.key==='type'||f.key==='cppPlan')render();
       });node.dataset.setting=f.key;(core[cat].includes(f.key)?row:more).appendChild(node);
     });
     if(cat==='dbPensions')pensionFields(item,config.incomes.slice(0,config.assumptions.householdType==='single'?1:2),row,more);
@@ -393,7 +396,7 @@ function listSection(cat) {
     if(!spec.fixed){const del=document.createElement('button');del.className='btn ghost';del.textContent='Remove';del.onclick=()=>{config[cat].splice(i,1);render();};wrapper.append(del);}
     sec.append(wrapper);
   });
-  if(!spec.fixed){const add=document.createElement('button');add.className='btn ghost';add.textContent=cat==='dbPensions'?'Add pension':cat==='accounts'?'Add account':'Add property or debt';add.onclick=()=>{config[cat].push(cat==='dbPensions'?newPension(config.incomes[0].name):cat==='accounts'?{name:'New account',owner:config.incomes[0].name,type:'TFSA',balance:0,growthRate:5}:{name:'New property',type:'principal',ownerSplit:100,value:0,mortgage:0});render();};sec.append(add);}
+  if(!spec.fixed){const add=document.createElement('button');add.className='btn ghost';add.textContent=cat==='dbPensions'?'Add pension':cat==='accounts'?'Add account':'Add property or debt';add.onclick=()=>{const item=cat==='dbPensions'?newPension(config.incomes[0].name):cat==='accounts'?{name:'New account',owner:config.incomes[0].name,type:'TFSA',balance:0,growthRate:5}:{name:'New property',type:'principal',ownerSplit:100,value:0,mortgage:0};config[cat].push(item);if(cat==='realEstate')autofillRealEstate(item);render();};sec.append(add);}
   return sec;
 }
 
@@ -517,13 +520,17 @@ async function backupNow() {
   if (r.ok) { loadBackups(); toast('Backed up to ' + r.file); } else toast('Backup failed', true);
 }
 
-el('setup-wizard').addEventListener('cancel',event=>{event.preventDefault();closeWizard();});
 configureSettingsSchema();
-function receiveSettings(c){config=E.normalizeConfig(c);config.assumptions.spendingMode='target';settingsDirty=false;el('settings-save-status').textContent='All changes saved';render();}
-AppStorage.bindState(()=>config,receiveSettings);
-AppStorage.subscribe(c=>{if(settingsDirty){el('settings-save-status').textContent='The saved plan changed in another window. Your unsaved edits are kept here.';return;}receiveSettings(c);});
-el('editor').addEventListener('input',event=>{if(!event.target.closest('.comparison-tool'))markSettingsDirty();});
-el('editor').addEventListener('change',event=>{if(!event.target.closest('.comparison-tool'))markSettingsDirty();});
-el('editor').addEventListener('click',event=>{if(event.target.closest('button')&&/^(Add|Remove|Use these earnings)/.test(event.target.textContent))markSettingsDirty();});
-el('save-settings').disabled=true;
-init().catch(error=>{el('settings-save-status').textContent=error.message;el('save-settings').disabled=true;toast(error.message,true);});
+function receiveSettings(c){config=E.normalizeConfig(c);settingsDirty=false;el('settings-save-status').textContent='All changes saved';render();}
+// Pages without the settings-editor shell (e.g. Plan > Properties) load this file only for its
+// shared helpers (field/advanced/el/toast) and skip the editor lifecycle below.
+if(el('editor')){
+  el('setup-wizard').addEventListener('cancel',event=>{event.preventDefault();closeWizard();});
+  AppStorage.bindState(()=>config,receiveSettings);
+  AppStorage.subscribe(c=>{if(settingsDirty){el('settings-save-status').textContent='The saved plan changed in another window. Your unsaved edits are kept here.';return;}receiveSettings(c);});
+  el('editor').addEventListener('input',event=>{if(!event.target.closest('.comparison-tool'))markSettingsDirty();});
+  el('editor').addEventListener('change',event=>{if(!event.target.closest('.comparison-tool'))markSettingsDirty();});
+  el('editor').addEventListener('click',event=>{if(event.target.closest('button')&&/^(Add|Remove|Use these earnings)/.test(event.target.textContent))markSettingsDirty();});
+  el('save-settings').disabled=true;
+  init().catch(error=>{el('settings-save-status').textContent=error.message;el('save-settings').disabled=true;toast(error.message,true);});
+}

@@ -4,11 +4,11 @@ A retirement calculator built for **Canada**, for one adult or a couple. Plan wi
 
 Run it as a **completely static site on GitHub Pages**, **on Docker/Unraid**, **offline from a ZIP**, or **locally with Node.js**. No subscription or external financial account connection is required.
 
-**Latest tagged release: 1.0.3** · [Download the standalone app](https://github.com/asmegin/Retirement-Calculator/releases/latest/download/retirement-calculator-standalone.zip) · [Releases](https://github.com/asmegin/Retirement-Calculator/releases) · [Version 1.0.3 release notes](docs/releases/v1.0.3.md)
+**Latest tagged release: 1.0.4** · [Download the standalone app](https://github.com/asmegin/Retirement-Calculator/releases/latest/download/retirement-calculator-standalone.zip) · [Releases](https://github.com/asmegin/Retirement-Calculator/releases) · [Version 1.0.4 release notes](docs/releases/v1.0.4.md)
 
 If the repository is private, sign in to GitHub with an account that has access before opening these downloads.
 
-**Current release: 1.0.3 (`v1.0.3`)** - [Changes and upgrade notes](docs/releases/v1.0.3.md). Download the [latest release](https://github.com/asmegin/Retirement-Calculator/releases/latest) or see the [hybrid deployment guide](docs/hybrid-deployment.md).
+**Current release: 1.0.4 (`v1.0.4`)** - [Changes and upgrade notes](docs/releases/v1.0.4.md). Download the [latest release](https://github.com/asmegin/Retirement-Calculator/releases/latest) or see the [hybrid deployment guide](docs/hybrid-deployment.md).
 
 ## Contents
 
@@ -124,7 +124,7 @@ docker compose up -d --build
 
 Open **http://localhost:3333**, or **http://YOUR-SERVER-IP:3333** from another device on your network.
 
-The included [compose.yaml](compose.yaml) can build this checkout or use `ghcr.io/asmegin/retirement-calculator:${APP_VERSION}`. The command above builds the current source as `1.0.3`. To use the published image instead, run `docker compose pull` followed by `docker compose up -d --no-build`. The container restarts automatically and stores the shared plan and backups in `./data`. Keep that directory when updating or replacing the container.
+The included [compose.yaml](compose.yaml) can build this checkout or use `ghcr.io/asmegin/retirement-calculator:${APP_VERSION}`. The command above builds the current source as `1.0.4`. To use the published image instead, run `docker compose pull` followed by `docker compose up -d --no-build`. The container restarts automatically and stores the shared plan and backups in `./data`. Keep that directory when updating or replacing the container.
 
 Useful commands, run from the same directory:
 
@@ -154,7 +154,7 @@ In **Docker → Add Container**, use:
 | Setting | Value |
 | --- | --- |
 | Name | `retirement-calculator` |
-| Repository | `ghcr.io/asmegin/retirement-calculator:1.0.3` |
+| Repository | `ghcr.io/asmegin/retirement-calculator:1.0.4` |
 | Network type | `Bridge` |
 | Container port | `3333` / TCP |
 | Host port | `3333`, or another unused port |
@@ -251,11 +251,11 @@ Below it, **Find a withdrawal plan** also searches annual RRSP/RRIF targets. Cho
 
 ### When to sell a rental
 
-Go to **Properties → When should I sell my rental?**. Check the property's total adjusted cost, building cost excluding land, building share of sale proceeds, remaining UCC, ownership, debt, rental expenses and selling costs first.
+Go to **Plan → Properties → When should I sell my rental?**. Edit property details separately under **Configuration → Properties**. Check the property's total adjusted cost, building cost excluding land, building share of sale proceeds, remaining UCC, ownership, debt, rental expenses and selling costs first.
 
-Choose a rental and select **Calculate best sale years**. The main result shows **extra sustainable after-tax spending per month**, compared with the capacity under your current settings. Sale years are ranked by spending; expand **Tax and inheritance trade-offs** for those secondary outcomes. Optionally compare stopping future CCA claims. Review a year to see sale proceeds, mortgage discharge, capital gain, recapture, terminal loss and estimated tax. **Use this sale and CCA setting** updates the editor; **Save changes** keeps it. Historical CCA can still be recaptured even if future claims are stopped.
+Select one or more rentals and choose **Calculate best sale years**. The main result shows **extra sustainable after-tax spending per month**, compared with the capacity under your current settings. Sale years are ranked by spending; expand **Tax and inheritance trade-offs** for those secondary outcomes. Optionally compare stopping future CCA claims. Review a year to see sale proceeds, mortgage discharge, capital gain, recapture, terminal loss and estimated tax. **Use this sale and CCA setting** updates the planning workspace; **Save plan** keeps it. Historical CCA can still be recaptured even if future claims are stopped.
 
-The comparison tests keeping the rental and selling at the **start** of each projected year. Spending estimates follow your retirement dates, current lifespan settings, spending schedule and assumed returns, with no minimum inheritance reserved. They are estimates, not guarantees, and the $40,000/month search ceiling is flagged when reached. The separate tax and inheritance illustrations include terminal tax for the keep option as well, using the configured lifespans. Attached HELOCs continue under their entered schedules. The tool explains its tax assumptions below the results. Applying a property alternative clears an existing annual withdrawal schedule so withdrawals can be recalculated.
+With one rental, the comparison tests keeping it and selling at the **start** of each projected year. Multiple rentals use an exhaustive joint grid when it fits the budget; otherwise a coarse-to-fine grid and coordinate descent search up to 400 combinations. This limited search may miss a better combination. The keeping comparison retains all selected rentals and evaluates both alternatives at their own maximum supported spending, using identical lifespan and estate settings. Unselected properties keep their entered sale dates. Spending estimates follow your retirement dates, current lifespan settings, spending schedule and assumed returns, with no minimum inheritance reserved. They are estimates, not guarantees, and the $40,000/month search ceiling is flagged when reached. The separate tax and inheritance illustrations include terminal tax for the keep option as well, using the configured lifespans. Attached HELOCs continue under their entered schedules. The tool explains its tax assumptions below the results. Applying a property alternative clears an existing annual withdrawal schedule so withdrawals can be recalculated.
 
 ### Retire sooner, together
 

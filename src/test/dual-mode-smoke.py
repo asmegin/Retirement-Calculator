@@ -13,6 +13,19 @@ def check_comparisons(page,base):
       c.realEstate=[{name:'Test rental',type:'rental',value:500000,appreciation:2,acb:300000,buildingAcb:250000,buildingSalePercent:80,uccPool:200000,ccaEnabled:true,grossRentMonthly:2000,mortgage:100000,interestRate:5,paymentMonthly:1000,sellingCostPct:5,saleYear:0}];
       await AppStorage.save(c);}''')
     saved=page.evaluate('PlanState.get()')
+    # Rental-only fields disappear for homes and HELOCs, and entered values survive toggles.
+    record=page.locator('[data-category=realEstate] .setting-record').first
+    record.locator('[data-setting=type] select').select_option('principal')
+    assert record.locator('[data-setting=grossRentMonthly]').count()==0
+    record.locator('[data-setting=type] select').select_option('heloc')
+    assert record.locator('[data-setting=value]').count()==0
+    assert record.locator('[data-setting=attachToRental]').count()==1
+    record.locator('[data-setting=type] select').select_option('rental')
+    assert record.locator('[data-setting=grossRentMonthly] input').input_value()=='2000'
+    assert record.locator('[data-setting=uccPool] input').input_value()=='200000'
+    page.goto(base+'/plan-properties.html')
+    page.wait_for_selector('#save-plan:enabled')
+    assert page.locator('a[href="./plan-properties.html"][aria-current=page]').count()==1
     tool=page.locator('[data-comparison=rental]')
     tool.get_by_role('button',name='Calculate best sale years',exact=True).click()
     tool.locator('.comparison-spending-table tbody tr').first.wait_for(timeout=60000)
@@ -25,25 +38,45 @@ def check_comparisons(page,base):
     tool.locator('.comparison-spending-table tr[data-option-label="Sell '+str(time.localtime().tm_year)+'"]').get_by_role('button',name='Review',exact=True).click()
     assert 'CCA recapture (100% taxable): $50,000' in tool.locator('.comparison-detail').inner_text()
     tool.get_by_role('button',name='Use this sale and CCA setting',exact=True).click()
-    assert page.evaluate('config.realEstate[0].saleYear')==time.localtime().tm_year
+    assert page.evaluate('PlanState.get().realEstate[0].saleYear')==time.localtime().tm_year
     assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')==saved
-    page.get_by_role('button',name='Save changes',exact=True).click()
-    page.wait_for_function('document.getElementById("settings-save-status").textContent==="All changes saved"')
+    page.locator('#save-plan').click()
+    page.wait_for_function('document.getElementById("save-status").textContent==="Plan saved."')
     page.reload();page.wait_for_selector('[data-comparison=rental]')
-    assert page.evaluate('config.realEstate[0].saleYear')==time.localtime().tm_year
+    assert page.evaluate('PlanState.get().realEstate[0].saleYear')==time.localtime().tm_year
     page.evaluate('c=>AppStorage.save(c)',saved)
     tool.get_by_role('button',name='Calculate best sale years',exact=True).click();tool.locator('.comparison-spending-table tbody tr').first.wait_for(timeout=60000)
     page.set_viewport_size({'width':390,'height':844})
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
     page.screenshot(path=str(Path(tempfile.gettempdir())/'retirement-rental-comparison-mobile.png'),full_page=True)
     page.set_viewport_size({'width':1512,'height':1000})
+    page.get_by_text('Compare extra debt payments with investing',exact=True).click()
+    page.get_by_role('button',name='Compare strategies',exact=True).click()
+    assert 'ending net worth' in page.locator('#debt-comparison').inner_text()
+    # Select both rentals and ensure applying updates both dates but does not save automatically.
+    page.evaluate('''async()=>{const c=structuredClone(PlanState.get());c.realEstate.push({...c.realEstate[0],name:'Second rental',value:250000,acb:200000,buildingAcb:150000,uccPool:100000,ccaEnabled:false});await AppStorage.save(c);}''')
+    multi_saved=page.evaluate('PlanState.get()')
+    tool.get_by_label('Second rental',exact=True).check()
+    tool.get_by_label('Also compare stopping future CCA claims',exact=True).uncheck()
+    tool.get_by_role('button',name='Calculate best sale years',exact=True).click()
+    tool.locator('.spending-recommendation').wait_for(timeout=60000)
+    assert 'Joint search:' in tool.locator('.tool-status').inner_text()
+    tool.locator('.spending-recommendation').get_by_role('button',name='Review option',exact=True).click()
+    apply=tool.get_by_role('button',name='Use this sale and CCA setting',exact=True)
+    if apply.is_enabled():
+        apply.click()
+        assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')==multi_saved
+        # A saved-plan update in another tab cannot erase the unsaved proposal.
+        proposed=page.evaluate('PlanState.get()')
+        page.evaluate('c=>AppStorage.save(c)',multi_saved)
+        assert page.evaluate('PlanState.get()')==proposed
     page.goto(base+'/withdrawals.html?compare=1');tool=page.locator('[data-comparison=withdrawals]');tool.locator('.comparison-spending-table tbody tr').first.wait_for(timeout=60000)
     assert tool.locator('.comparison-spending-table tbody tr').count()==6
     assert 'Most monthly spending' in tool.inner_text()
     tool.locator('.comparison-spending-table tbody tr').nth(2).get_by_role('button',name='Review',exact=True).click()
     tool.get_by_role('button',name='Use this withdrawal order',exact=True).click()
     assert page.evaluate('config.assumptions.withdrawalStrategy')=='rrsp-first'
-    assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')==saved
+    assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')==multi_saved
     page.locator('#save-plan').click();page.wait_for_function('document.getElementById("save-status").textContent==="Plan saved."')
     page.goto(base+'/action-plan.html');page.wait_for_selector('[data-action=retirement]:enabled')
     page.locator('#retirement-sell-rentals').check();page.locator('[data-action=retirement]').click()

@@ -125,7 +125,7 @@ app.get('/api/projection', async (req, res, next) => {
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/config', (req, res) => res.sendFile(path.join(__dirname, 'public', 'config.html')));
 app.get('/planning', (req, res) => res.sendFile(path.join(__dirname, 'public', 'planning.html')));
-['household','accounts','plan-settings','employment','properties','pensions','detailed','action-plan','scenarios','withdrawals','app-config'].forEach(page=>app.get('/'+page,(req,res)=>res.sendFile(path.join(__dirname,'public',page+'.html'))));
+['household','accounts','plan-settings','employment','properties','pensions','detailed','action-plan','scenarios','withdrawals','plan-properties','app-config'].forEach(page=>app.get('/'+page,(req,res)=>res.sendFile(path.join(__dirname,'public',page+'.html'))));
 
 io.on('connection', async socket => {
   try { socket.emit('config_updated', await loadConfig()); }

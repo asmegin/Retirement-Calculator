@@ -195,6 +195,84 @@ test('rental alternatives reproduce the cleared schedule that will be applied',(
   near(sale.tax,simulate(candidate).lifetimeTax);near(sale.estate,simulate(candidate).finalNetWorthReal);
 });
 
+test('joint multi-property sale search finds at least as good a spend as optimizing either property alone',()=>{
+  const c=fixture();c.accounts=[{name:'Cash',owner:'P0',type:'TFSA',balance:50000,growthRate:0}];
+  c.realEstate=[
+    {name:'Rental A',type:'rental',value:400000,appreciation:0,acb:300000,buildingAcb:300000,uccPool:250000,grossRentMonthly:1500,sellingCostPct:0},
+    {name:'Rental B',type:'rental',value:300000,appreciation:0,acb:250000,buildingAcb:250000,uccPool:200000,grossRentMonthly:1200,sellingCostPct:0}
+  ];
+  const original=JSON.stringify(c);
+  const joint=E.compareRentalSales(c,{startYear:2026,propertyIndices:[0,1]});
+  const soloA=E.compareRentalSales(c,{startYear:2026,propertyIndex:0}).bestSpending.monthlySpend;
+  const soloB=E.compareRentalSales(c,{startYear:2026,propertyIndex:1}).bestSpending.monthlySpend;
+  assert.ok(joint.bestSpending.monthlySpend>=Math.max(soloA,soloB)-1,`${joint.bestSpending.monthlySpend} vs ${soloA}/${soloB}`);
+  assert.deepEqual(joint.propertyIndices,[0,1]);assert.deepEqual(joint.propertyNames,['Rental A','Rental B']);
+  joint.rows.forEach(row=>assert.equal(row.sales.length,2));
+  assert.equal(JSON.stringify(c),original);
+});
+test('wealth-at-max-spend is attached only to the keep and best-spending rows',()=>{
+  const c=fixture();c.accounts=[{name:'Cash',owner:'P0',type:'TFSA',balance:50000,growthRate:0}];
+  c.realEstate=[
+    {name:'Rental A',type:'rental',value:400000,appreciation:0,acb:300000,buildingAcb:300000,uccPool:250000,grossRentMonthly:1500,sellingCostPct:0},
+    {name:'Rental B',type:'rental',value:300000,appreciation:0,acb:250000,buildingAcb:250000,uccPool:200000,grossRentMonthly:1200,sellingCostPct:0}
+  ];
+  const joint=E.compareRentalSales(c,{startYear:2026,propertyIndices:[0,1]});
+  assert.ok(joint.keepRow.wealthAtMaxSpend);assert.ok(Number.isFinite(joint.keepRow.wealthAtMaxSpend.tax));
+  assert.ok(joint.bestSpending.wealthAtMaxSpend);
+  const untouched=joint.rows.filter(r=>r!==joint.keepRow&&r!==joint.bestSpending);
+  assert.ok(untouched.length>0);untouched.forEach(row=>assert.equal(row.wealthAtMaxSpend,undefined));
+  const single=E.compareRentalSales(c,{startYear:2026,propertyIndex:0});
+  assert.ok(single.keepRow.wealthAtMaxSpend);assert.equal(single.keepRow.label,'Keep through plan');
+});
+test('propertyIndices requires every selected property to be a rental',()=>{
+  const c=fixture();c.realEstate=[{name:'Home',type:'principal',value:100000},{name:'Rental',type:'rental',value:200000,acb:100000,buildingAcb:80000,uccPool:70000}];
+  assert.throws(()=>E.compareRentalSales(c,{propertyIndices:[0,1],startYear:2026}),/rental property/);
+  assert.throws(()=>E.compareRentalSales(c,{propertyIndices:[1,1],startYear:2026}),/only once/);
+});
+
+test('joint search enforces a total budget and explores CCA in coordinate descent',()=>{
+  const c=fixture();c.assumptions.targetDeathAge=66;
+  c.accounts=[{name:'Cash',owner:'P0',type:'TFSA',balance:100000,growthRate:0}];
+  c.realEstate=Array.from({length:5},(_,i)=>({name:'Rental '+i,type:'rental',value:100000,acb:100000,buildingAcb:100000,uccPool:80000,ccaEnabled:true,grossRentMonthly:1000}));
+  const progress=[],r=E.compareRentalSales(c,{propertyIndices:[0,1,2,3,4],startYear:2026,compareCCA:true,maxEvaluations:8,onProgress:p=>progress.push(p)});
+  assert.ok(r.rows.length<=8);assert.equal(r.searchMethod,'coordinate descent');assert.equal(r.budgetReached,true);
+  assert.ok(progress.every(p=>p.evaluated<=p.maxEvaluations));
+  assert.ok(r.rows.some(row=>row.sales.some(s=>!s.cca)));
+  assert.notEqual(r.keepRow,r.rows[0]);assert.equal(r.keepRow.isCurrent,false);
+});
+
+test('maximum-spending wealth uses identical lifespan, CCA and withdrawal settings to the spending estimate',()=>{
+  const c=fixture();c.assumptions.estate={enabled:false};c.incomes[0].deathAge=66;
+  c.assumptions.withdrawalPlan={2026:[180000,0]};
+  c.accounts=[{name:'RRSP',owner:'P0',type:'RRSP',balance:300000,growthRate:0}];
+  c.realEstate=[{name:'Rental',type:'rental',value:200000,acb:160000,buildingAcb:160000,uccPool:120000,ccaEnabled:true,grossRentMonthly:1000}];
+  const r=E.compareRentalSales(c,{propertyIndex:0,startYear:2026,compareCCA:true});
+  for(const row of [r.keepRow,r.bestSpending]){
+    const candidate=structuredClone(c);
+    row.sales.forEach(s=>Object.assign(candidate.realEstate[s.index],{saleYear:s.year,ccaEnabled:s.cca}));
+    if(!row.isCurrent)delete candidate.assumptions.withdrawalPlan;
+    candidate.assumptions.desiredMonthlyIncome=row.monthlySpend;
+    const expected=simulate(candidate),wealth=row.wealthAtMaxSpend;
+    near(wealth.tax,expected.lifetimeTax+expected.lifetimeCorporateTax);near(wealth.estate,expected.finalNetWorthReal);
+    assert.equal(wealth.endYear,2031);assert.equal(wealth.funded,true);
+  }
+});
+
+test('joint sale breakdown identifies properties by index even when their names match',()=>{
+  const c=fixture();c.assumptions.targetDeathAge=65;
+  c.realEstate=[100000,300000].map(value=>({name:'Rental',type:'rental',value,appreciation:0,acb:value,buildingAcb:value,uccPool:value,sellingCostPct:0}));
+  const r=E.compareRentalSales(c,{propertyIndices:[0,1],startYear:2026});
+  const sold=r.rows.find(row=>row.sales.every(s=>s.year===2026));
+  assert.ok(sold);assert.equal(sold.sales[0].sale.grossPrice,100000);assert.equal(sold.sales[1].sale.grossPrice,300000);
+});
+
+test('property normalization honours an explicit type and retains zero or inherited values',()=>{
+  const c=fixture();c.realEstate=[{name:'Rental with HELOC',type:'rental',value:100000,acb:80000,uccPool:0,ownerSplit:null,interestRate:0}];
+  const p=E.normalizeConfig(c).realEstate[0];
+  assert.equal(p.type,'rental');assert.equal(p.uccPool,0);assert.equal(p.ownerSplit,null);assert.equal(p.interestRate,0);
+  assert.equal(p.buildingAcb,80000);assert.equal(p.sellingCostPct,5);
+});
+
 test('Monte Carlo does not count unfunded contributions before retirement as a successful plan',async()=>{
   const c=fixture();c.incomes[0].birthYear=new Date().getFullYear()-65;c.incomes[0].targetRetireAge=66;
   c.accounts=[{name:'Savings',owner:'P0',type:'TAXABLE',balance:0,growthRate:0,contribAmt:10000,contribFreq:'yearly'}];c.assumptions.mcVolatility=0;
