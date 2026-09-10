@@ -27,6 +27,7 @@ def check_comparisons(page,base):
     page.wait_for_selector('#save-plan:enabled')
     assert page.locator('a[href="./plan-properties.html"][aria-current=page]').count()==1
     tool=page.locator('[data-comparison=rental]')
+    assert tool.get_by_label('Comparison depth',exact=True).is_hidden()
     # Validation must survive the worker boundary and offer the actual configuration page.
     for patch,expected in [({'uccPool':350000},['CCA pool remaining (UCC)','$350,000','$250,000']),
                            ({'buildingAcb':350000},['Building cost excluding land','$350,000','$300,000']),
@@ -74,10 +75,16 @@ def check_comparisons(page,base):
     page.evaluate('''async()=>{const c=structuredClone(PlanState.get());c.realEstate.push({...c.realEstate[0],name:'Second rental',value:250000,acb:200000,buildingAcb:150000,uccPool:100000,ccaEnabled:false});await AppStorage.save(c);}''')
     multi_saved=page.evaluate('PlanState.get()')
     tool.get_by_label('Second rental',exact=True).check()
+    assert tool.get_by_label('Comparison depth',exact=True).input_value()=='quick'
     tool.get_by_label('Also compare stopping future CCA claims',exact=True).uncheck()
     tool.get_by_role('button',name='Calculate best sale years',exact=True).click()
     tool.locator('.spending-recommendation').wait_for(timeout=60000)
     assert 'Joint search:' in tool.locator('.tool-status').inner_text()
+    # Switching depth discards stale results, and both values reach real workers.
+    tool.get_by_label('Comparison depth',exact=True).select_option('thorough')
+    assert tool.locator('.comparison-spending-table').count()==0
+    tool.get_by_role('button',name='Calculate best sale years',exact=True).click()
+    tool.locator('.spending-recommendation').wait_for(timeout=60000)
     tool.locator('.spending-recommendation').get_by_role('button',name='Review option',exact=True).click()
     apply=tool.get_by_role('button',name='Use this sale and CCA setting',exact=True)
     if apply.is_enabled():
@@ -100,6 +107,38 @@ def check_comparisons(page,base):
     page.wait_for_selector('#action-results:not([hidden])',timeout=60000)
     assert 'Test rental:' in page.locator('#action-steps').inner_text()
     page.locator('#apply-action').click();page.wait_for_function('document.getElementById("action-status").textContent.startsWith("Changes applied")')
+    page.evaluate('c=>AppStorage.save(c)',original)
+
+def check_quick_rental_search(page,base):
+    page.goto(base+'/plan-properties.html');page.wait_for_selector('#save-plan:enabled')
+    original=page.evaluate('PlanState.get()')
+    page.evaluate('''async()=>{const c=RetireEngine.defaultConfig(),year=new Date().getFullYear();c.onboardingComplete=true;
+      c.incomes.forEach((p,k)=>Object.assign(p,{name:'Person '+k,birthYear:year-65,salary:0,targetRetireAge:65,cppBaseAt65:0,oasBaseAt65:0}));
+      Object.assign(c.assumptions,{targetDeathAge:75,desiredMonthlyIncome:2000,inflation:0,gisEnabled:false,optimizeContributions:false});
+      c.accounts=[{name:'Cash',type:'TFSA',owner:'Person 0',balance:100000,growthRate:0}];
+      c.realEstate=[0,1].map(i=>({name:'Quick rental '+i,type:'rental',value:200000,acb:160000,buildingAcb:120000,uccPool:100000,ccaEnabled:true,grossRentMonthly:700,appreciation:0}));
+      await AppStorage.save(c);
+      const create=AppWorkers.create;AppWorkers.create=function(kind){const worker=create(kind);worker.addEventListener('message',({data})=>{if(data.result)window.lastComparison=data.result;});return worker;};
+    }''')
+    tool=page.locator('[data-comparison=rental]');tool.get_by_label('Quick rental 1',exact=True).check()
+    run=tool.get_by_role('button',name='Calculate best sale years',exact=True)
+    run.click();tool.locator('.spending-recommendation').wait_for(timeout=60000)
+    result=page.evaluate('lastComparison')
+    assert result['searchMode']=='quick' and result['shortlisted']
+    assert result['evaluated']<=120 and result['fullPrecisionEvaluated']==len(result['rows'])<=24
+    assert 'fully verified' in tool.locator('.tool-status').inner_text()
+    assert tool.locator('.comparison-spending-table tbody tr').count()==len(result['rows'])
+    page.set_viewport_size({'width':320,'height':844})
+    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+    page.set_viewport_size({'width':1512,'height':1000})
+    tool.get_by_label('Comparison depth',exact=True).select_option('thorough')
+    run.click();tool.get_by_role('button',name='Cancel comparison',exact=True).click()
+    assert 'cancelled' in tool.locator('.tool-status').inner_text()
+    assert tool.locator('.comparison-spending-table').count()==0
+    run.click();tool.locator('.spending-recommendation').wait_for(timeout=60000)
+    assert page.evaluate('lastComparison.searchMode')=='thorough'
+    assert not page.evaluate('lastComparison.shortlisted')
+    assert page.evaluate('lastComparison.evaluated')<=400
     page.evaluate('c=>AppStorage.save(c)',original)
 
 def check_action_plan(page,url):
@@ -394,6 +433,8 @@ with tempfile.TemporaryDirectory(prefix='retirement-browser-data-') as data:
             assert not errors,errors
             check_comparisons(page,base)
             check_comparisons(local,(ROOT/'public').as_uri())
+            check_quick_rental_search(page,base)
+            check_quick_rental_search(local,(ROOT/'public').as_uri())
             assert not errors,errors
             browser.close();print('PASS: Docker real-time sync, file:// offline storage/navigation/workers, import/export, dedicated pages, advanced disclosure, FHSA conditional fields, RRSP goal, action plan, rental sale and withdrawal comparisons, themes and mobile layout.')
     finally:
