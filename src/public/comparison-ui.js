@@ -14,6 +14,10 @@
     section.append(el('p',rental?'Find which sale year — or combination of sale years, if you pick more than one rental — supports the most after-tax retirement spending each month. The recommendation compares net wealth and income against keeping the selected rentals. Tax and inheritance trade-offs are available below the spending results.':'This is the Withdrawal strategy finder used by the withdrawal order control. Compare all five orders at your current spending goal, then use the annual schedule search below for finer tax and estate adjustments.','section-description'));
     const controls=el('div',null,'form-grid'),cca=el('input');cca.type='checkbox';cca.checked=true;
     let propertyChecks=[];
+    const searchMode=el('select'),searchField=el('label',null,'form-field');
+    searchMode.setAttribute('aria-label','Comparison depth');
+    [['quick','Quick comparison'],['thorough','Thorough comparison']].forEach(([value,text])=>{const option=el('option',text);option.value=value;searchMode.append(option);});
+    searchField.append(el('span','Comparison depth'),searchMode,el('small','Quick refines promising combinations and verifies the finalists. Thorough explores more options and takes longer.'));
     if(rental){
       const rentals=[];getConfig().realEstate.forEach((p,i)=>{if(p.type==='rental')rentals.push({index:i,name:p.name});});
       propertyChecks=rentals.map((p,n)=>{
@@ -22,6 +26,7 @@
         return box;
       });
       const toggle=el('label','Also compare stopping future CCA claims');toggle.prepend(cca);controls.append(toggle);
+      controls.append(searchField);searchField.hidden=true;
       section.append(controls,el('p','Select one or more rentals to find the best sale years for each jointly. Before calculating, check Properties → Advanced options: purchase cost, building cost excluding land, building share of sale proceeds, remaining UCC, ownership, selling costs, rental expenses and debt. Historical CCA is still recaptured when future claims are disabled.','inline-help'));
     }
     function selectedIndices(){return propertyChecks.filter(b=>b.checked).map(b=>Number(b.value));}
@@ -30,7 +35,7 @@
     let worker=null,revision=0,snapshot=null,source=null;
     function stop(){revision++;worker?.terminate();worker=null;run.disabled=rental&&!propertyChecks.length;cancel.hidden=true;section.setAttribute('aria-busy','false');}
     function invalidate(){stop();output.replaceChildren();status.textContent='Inputs changed. Calculate again to update the comparison.';}
-    propertyChecks.forEach(box=>box.onchange=invalidate);cca.onchange=invalidate;
+    propertyChecks.forEach(box=>box.onchange=()=>{searchField.hidden=selectedIndices().length<2;invalidate();});cca.onchange=invalidate;searchMode.onchange=invalidate;
     cancel.onclick=()=>{stop();output.replaceChildren();status.textContent='Comparison cancelled.';};
     run.disabled=rental&&!propertyChecks.length;
     if(run.disabled)status.textContent='Add a rental under Configuration > Properties to compare sale dates.';
@@ -103,6 +108,7 @@
         if(checks.length){const notice=el('div',null,'notice comparison-input-checks');notice.append(el('h3','Review inputs before relying on the result'));checks.forEach(text=>notice.append(el('p',text)));output.append(notice);}
         supporting.append(el('summary','Tax and inheritance trade-offs'),el('p','These figures use the current spending goal, not each option\u2019s maximum spending. Lower lifetime tax can result from lower income and is not necessarily a better retirement. Net worth includes property you may never spend. Tax totals are in future dollars; ending net worth is in today\u2019s dollars. Both illustrations include terminal tax at the configured lifespans, even if estate modelling is off in your saved plan.'));
         const alternatives=el('div',null,'comparison-cards');alternatives.append(metricCard('Lowest lifetime tax',result.bestTax,'tax'),metricCard('Highest ending net worth',result.bestEstate,'estate'));supporting.append(alternatives);
+        if(result.shortlisted)supporting.append(el('p','Quick comparison shows tax and net worth for the fully verified spending finalists. These recommendations are among those finalists only. Use Thorough comparison to explore more alternatives.','inline-help'));
       }else{
         cards.append(metricCard('Lowest lifetime tax',result.bestTax,'tax'),metricCard('Highest ending net worth',result.bestEstate,'estate'),metricCard('Most monthly spending',result.bestSpending,'monthlySpend'));output.append(cards);
       }
@@ -127,6 +133,7 @@
       if(rental){supporting.append(makeTable(ranked,true));output.append(supporting);}
       status.textContent='Compared '+result.rows.length+' options. Changes are versus Current settings. '+(rental?'Sale options are ranked by after-tax monthly spending in today\u2019s dollars. Alternatives recalculate withdrawals without a saved annual schedule; applying clears that schedule. ':'Tax is in future dollars; ending net worth is in today\u2019s dollars. Tax and net worth recommendations fund the current spending goal. ')+'Best among the options tested, under your assumptions.';
       if(rental&&result.propertyIndices)status.textContent+=' Joint search: '+result.searchMethod+'. '+(result.budgetReached?'The '+result.maxEvaluations+'-option budget was reached. ':'')+'A limited search can miss a better combination.';
+      if(result.shortlisted)status.textContent='Quick comparison searched '+result.evaluated+' options and fully verified '+result.fullPrecisionEvaluated+'. The table shows only verified results. Joint search: focused refinement around promising combinations. '+(result.budgetReached?'The '+result.maxEvaluations+'-option limit was reached. ':'')+'A limited search can miss a better combination. Use Thorough comparison for a broader search.';
       if(rental){
         const notes=el('details'),summary=el('summary','Tax rules and comparison assumptions');notes.append(summary);
         notes.append(el('p','Rules checked September 8, 2026: 50% capital gains inclusion; recapture is ordinary income. CCA cannot create or increase an aggregate rental loss. Each building is treated as a separate CCA class emptied on sale. The search assumes an established, personally owned long-term rental, with no change of use or principal-residence exemption. Corporate rentals, flipped property, GST/HST, capital-loss carryovers and special elections are outside this comparison. Future brackets follow the app’s indexed tax assumptions.'));
@@ -145,8 +152,8 @@
         worker=AppWorkers.create('comparison');
         const fail=(message,fix)=>{stop();showFailure(message,fix);};
         worker.onerror=()=>{if(id===revision)fail('Comparison failed. Try again.');};
-        worker.onmessage=({data})=>{if(id!==revision||data.id!==id)return;if(!section.isConnected){stop();return;}if(key(getConfig())!==source){invalidate();return;}if(data.error){fail(data.error,data.fix);return;}if(data.progress){status.textContent='Compared '+data.progress.evaluated+(data.progress.maxEvaluations?' of '+data.progress.maxEvaluations:'')+' options.';return;}stop();show(data.result);};
-        worker.postMessage({id,task,config:snapshot,propertyIndices:selectedIndices(),compareCCA:cca.checked});
+        worker.onmessage=({data})=>{if(id!==revision||data.id!==id)return;if(!section.isConnected){stop();return;}if(key(getConfig())!==source){invalidate();return;}if(data.error){fail(data.error,data.fix);return;}if(data.progress){status.textContent=data.progress.phase==='verify'?'Verifying finalists at full precision: '+data.progress.verified+' completed.':(data.progress.phase==='search'?'Searching':'Compared')+' '+data.progress.evaluated+(data.progress.maxEvaluations?' of up to '+data.progress.maxEvaluations:'')+' options.';return;}stop();show(data.result);};
+        worker.postMessage({id,task,config:snapshot,propertyIndices:selectedIndices(),compareCCA:cca.checked,searchMode:searchMode.value});
       }catch(error){stop();showFailure(error.message,error.fix);}
     };
     window.addEventListener('pagehide',stop,{once:true});

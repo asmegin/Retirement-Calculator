@@ -1516,8 +1516,9 @@
   /* ------------------------------------------------- max sustainable spend */
   function maxSustainableSpend(cfg, opts) {
     var lo = 0, hi = 40000, best = 0;
+    var tolerance = Math.max(0, num(opts && opts.spendingTolerance, 0));
     var base = clone(cfg);
-    for (var i = 0; i < 18; i++) {
+    for (var i = 0; i < 18 && hi - lo > tolerance; i++) {
       var mid = (lo + hi) / 2;
       base.assumptions.desiredMonthlyIncome = mid;
       var res = simulate(base, Object.assign({ fastSolve: true,spendingScale:base.assumptions.spendingMode === 'categories' ? mid/Math.max(1,Planning.spendingBaseline(base.assumptions.spendingCategories)/12) : 1 }, opts || {}));
@@ -1775,6 +1776,131 @@
     return {rows:rows,keepRow:keepRow,method:method,maxEvaluations:cap,budgetReached:limited||rows.length>=cap};
   }
 
+  // Screen at $25/month precision, then build only fully verified comparison rows.
+  // Keeping the ordinary withdrawal solver during screening avoids introducing a
+  // second approximation into the spending bracket. Nothing approximate is applied.
+  function searchQuickPortfolioSaleYears(ctx,indices,opts){
+    var cap=Math.max(8,Math.min(2000,int(opts.maxEvaluations,120))),tolerance=25;
+    var properties=indices.map(function(i){return ctx.cfg.realEstate[i];});
+    var end=ctx.spendingBaseline.endYear,earliest=properties.map(function(p){return Math.max(ctx.start,p.purchaseYear||ctx.start);});
+    var variants=properties.map(function(p){return opts.compareCCA&&p.ccaEnabled?[true,false]:[p.ccaEnabled];});
+    var fullSize=properties.reduce(function(n,p,k){return n*(1+Math.max(0,end-earliest[k]+1))*variants[k].length;},1);
+    if(fullSize<=cap-2)return searchPortfolioSaleYears(ctx,indices,Object.assign({},opts,{maxEvaluations:cap}));
+    var candidates=[],seen=new Map(),rows=[],limited=false;
+    function key(sales,current){return (current?'current|':'alternative|')+sales.map(function(s){return s.index+':'+s.year+':'+(s.cca?1:0);}).join('|');}
+    function label(sales){return sales.map(function(s,k){return properties[k].name+(s.year?': sell '+s.year:': keep')+(properties[k].ccaEnabled&&!s.cca?' (no future CCA)':'');}).join(', ');}
+    function salesFor(years){return indices.map(function(index,k){return {index:index,year:years[k],cca:properties[k].ccaEnabled};});}
+    function screen(sales,title,current){
+      var id=key(sales,current);if(seen.has(id))return seen.get(id);
+      if(candidates.length>=cap){limited=true;return null;}
+      var choice={sales:clone(sales),label:title||label(sales)},candidate={choice:choice,id:id};
+      if(candidates.length<2){
+        candidate.row=buildComparisonRow(ctx,choice,rows.length);rows.push(candidate.row);
+        candidate.spend=candidate.row.monthlySpend;
+      }else{
+        var c=clone(ctx.cfg);c.assumptions.estate=clone(ctx.spendingEstate);
+        sales.forEach(function(s){c.realEstate[s.index].saleYear=s.year;c.realEstate[s.index].ccaEnabled=s.cca;});
+        delete c.assumptions.withdrawalPlan;
+        candidate.spend=maxSustainableSpend(c,{startYear:ctx.start,fastSolve:false,spendingTolerance:tolerance});
+      }
+      candidates.push(candidate);seen.set(id,candidate);
+      if(opts.onProgress)opts.onProgress({phase:'search',evaluated:candidates.length,maxEvaluations:cap});
+      return candidate;
+    }
+    var currentYears=properties.map(function(p){return p.saleYear;});
+    screen(salesFor(currentYears),'Current settings',true);
+    var keep=screen(salesFor(indices.map(function(){return 0;})),'Keep all selected rentals');
+    // The alternative at the current dates still clears any saved withdrawal schedule.
+    screen(salesFor(currentYears));
+    function ranked(){return candidates.slice().sort(function(a,b){return b.spend-a.spend;});}
+    function centers(){
+      var chosen=[];
+      ranked().forEach(function(candidate){
+        if(chosen.length>=3)return;
+        if(!chosen.some(function(other){return candidate.choice.sales.every(function(s,k){var t=other.choice.sales[k];return s.cca===t.cca&&(s.year===t.year||(s.year&&t.year&&Math.abs(s.year-t.year)<=5));});}))chosen.push(candidate);
+      });
+      return chosen;
+    }
+    // Ten-year joint grid, with keeping and configured dates retained.
+    var coarse=properties.map(function(p,k){return sortUniqueNums([0,p.saleYear].concat(range(earliest[k],end,10),earliest[k]<=end?[end]:[]));});
+    var coarseLimit=Math.max(candidates.length,Math.floor(cap*.38));
+    var sets=planSampleSets(coarse,Math.max(1,coarseLimit-candidates.length),properties.map(function(p){return [0,p.saleYear];}));
+    if(sets)cartesian(sets).forEach(function(years){if(candidates.length<coarseLimit)screen(salesFor(years));});
+    // Also sample changes near retirement and pension starts, where a wide grid can miss a peak.
+    var events=[];
+    ctx.cfg.incomes.slice(0,ctx.cfg.assumptions.householdType==='single'?1:2).forEach(function(p){
+      [p.targetRetireAge,p.cppStartAge,p.oasStartAge,p.rrifConversionAge].forEach(function(age){events.push(p.birthYear+age);});
+    });
+    (ctx.cfg.dbPensions||[]).forEach(function(p){var owner=ctx.cfg.incomes.find(function(person){return person.name===p.owner;});if(owner)events.push(owner.birthYear+(p.followsRetirement?owner.targetRetireAge:p.startAge));});
+    var eventYears=sortUniqueNums(events.filter(function(y){return y>=ctx.start&&y<=end;}));
+    var eventLimit=Math.floor(cap*.52),eventBase=ranked()[0].choice.sales;
+    [0,-1,1].forEach(function(offset){eventYears.forEach(function(year){
+      if(candidates.length>=eventLimit)return;
+      var trial=clone(eventBase);trial.forEach(function(s,k){s.year=Math.max(earliest[k],Math.min(end,year+offset));if(earliest[k]>end)s.year=0;});screen(trial);
+    });});
+    // Refine several basins, sharing each stage's budget so one cannot consume it all.
+    [5,1].forEach(function(step){
+      var seeds=centers(),stageLimit=step===5?Math.floor(cap*.78):cap;
+      seeds.forEach(function(seed,n){
+        var limit=Math.min(stageLimit,candidates.length+Math.ceil((stageLimit-candidates.length)/(seeds.length-n)));
+        function attempt(sales){if(candidates.length<limit)screen(sales);}
+        var base=seed.choice.sales;
+        // Mix future CCA decisions before refining dates, including all claims stopped.
+        variants.forEach(function(flags,k){flags.forEach(function(flag){var trial=clone(base);trial[k].cca=flag;attempt(trial);});});
+        var noCCA=clone(base);noCCA.forEach(function(s,k){if(variants[k].length>1)s.cca=false;});attempt(noCCA);
+        var localBest=ranked()[0];
+        if(localBest.spend>seed.spend&&localBest.choice.sales.every(function(s,k){return s.year===base[k].year;}))base=localBest.choice.sales;
+        [1,-1,2,-2].forEach(function(direction){indices.forEach(function(index,k){
+          var trial=clone(base),year=(base[k].year||earliest[k])+direction*step;
+          if(year>=earliest[k]&&year<=end){trial[k].year=year;attempt(trial);}
+        });});
+        // Joint moves catch interactions that changing only one property would miss.
+        [1,-1].forEach(function(direction){
+          var trial=clone(base);trial.forEach(function(s,k){s.year=Math.max(earliest[k],Math.min(end,(s.year||earliest[k])+direction*step));if(earliest[k]>end)s.year=0;});attempt(trial);
+          if(indices.length===2){trial=clone(base);trial.forEach(function(s,k){s.year=Math.max(earliest[k],Math.min(end,(s.year||earliest[k])+(k?-direction:direction)*step));if(earliest[k]>end)s.year=0;});attempt(trial);}
+        });
+      });
+    });
+    // A refined winner may lie at the edge of the last neighborhood. Move that
+    // neighborhood with the winner until a full pass brings no screening improvement.
+    for(var pass=0;pass<3&&candidates.length<cap;pass++){
+      var before=ranked()[0].spend,count=candidates.length;
+      centers().forEach(function(seed){
+        var base=seed.choice.sales;
+        if(indices.length===2){
+          // A narrow optimum may require both dates to move across a small dip.
+          // Check the whole local square instead of requiring every single move to improve.
+          [0,1,-1,2,-2].forEach(function(a){[0,1,-1,2,-2].forEach(function(b){
+            var trial=clone(base),valid=true;
+            trial.forEach(function(s,k){s.year=(s.year||earliest[k])+(k?b:a);if(s.year<earliest[k]||s.year>end)valid=false;});
+            if(valid)screen(trial);
+          });});
+          return;
+        }
+        [1,-1].forEach(function(direction){
+          indices.forEach(function(index,k){var trial=clone(base),year=(base[k].year||earliest[k])+direction;
+            if(year>=earliest[k]&&year<=end){trial[k].year=year;screen(trial);}
+          });
+        });
+      });
+      if(candidates.length===count||ranked()[0].spend<=before)break;
+    }
+    // Baselines and the strongest candidates are recalculated with the normal 18-step
+    // spending solver. Include more close contenders while their screening bracket
+    // could beat the verified winner, up to 24 full rows in total.
+    var ordered=ranked(),minimum=Math.min(12,ordered.length),finalistLimit=Math.min(24,candidates.length);
+    var bestSpend=Math.max.apply(null,rows.map(function(row){return row.monthlySpend;}));
+    ordered.forEach(function(candidate,n){
+      if(candidate.row||rows.length>=finalistLimit)return;
+      if(n>=minimum&&candidate.spend+tolerance<bestSpend)return;
+      candidate.row=buildComparisonRow(ctx,candidate.choice,rows.length);rows.push(candidate.row);
+      bestSpend=Math.max(bestSpend,candidate.row.monthlySpend);
+      if(opts.onProgress)opts.onProgress({phase:'verify',evaluated:candidates.length,maxEvaluations:cap,verified:rows.length,maxVerified:finalistLimit});
+    });
+    return {rows:rows,keepRow:keep.row,method:'quick coarse-to-fine search',maxEvaluations:cap,evaluated:candidates.length,
+      budgetReached:limited||candidates.length>=cap,shortlisted:true,fullPrecisionEvaluated:rows.length};
+  }
+
   /* ---- spend-matched wealth: what would this row's own max sustainable spend mean for tax/estate/benefits ---- */
   function attachWealthAtMaxSpend(ctx,row){
     if(row.wealthAtMaxSpend)return;
@@ -1819,7 +1945,8 @@
     var baseline=simulate(cfg,{startYear:start});
     var ctx={cfg:cfg,start:start,baseline:baseline,spendingBaseline:spendingBaseline,spendingEstate:spendingEstate,rows0MonthlySpend:0};
 
-    var search=indices.length<=1?searchSinglePropertySaleYears(ctx,indices[0],opts):searchPortfolioSaleYears(ctx,indices,opts);
+    var mode=opts.searchMode==='thorough'?'thorough':'quick';
+    var search=indices.length<=1?searchSinglePropertySaleYears(ctx,indices[0],opts):(mode==='quick'?searchQuickPortfolioSaleYears:searchPortfolioSaleYears)(ctx,indices,opts);
     var rows=search.rows;
     if(indices.length<=1)rows.forEach(function(row){var s=row.sales[0];row.year=s.year;row.cca=s.cca;row.sale=s.sale;row.saleIncomeTax=s.saleIncomeTax;});
 
@@ -1830,7 +1957,8 @@
 
     var result={
       rows:rows,startYear:start,endYear:spendingBaseline.endYear,includesTerminalTax:true,
-      keepRow:search.keepRow,bestSpending:bestSpending,searchMethod:search.method||'every sale year',evaluated:rows.length,maxEvaluations:search.maxEvaluations||rows.length,budgetReached:!!search.budgetReached,
+      keepRow:search.keepRow,bestSpending:bestSpending,searchMethod:search.method||'every sale year',evaluated:search.evaluated||rows.length,maxEvaluations:search.maxEvaluations||rows.length,budgetReached:!!search.budgetReached,
+      searchMode:indices.length>1?mode:'exhaustive',shortlisted:!!search.shortlisted,fullPrecisionEvaluated:rows.length,
       bestTax:funded.reduce(function(a,b){return !a||b.tax<a.tax?b:a;},null),
       bestEstate:funded.reduce(function(a,b){return !a||b.estate>a.estate?b:a;},null)
     };

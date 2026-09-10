@@ -249,11 +249,66 @@ test('joint search enforces a total budget and explores CCA in coordinate descen
   const c=fixture();c.assumptions.targetDeathAge=66;
   c.accounts=[{name:'Cash',owner:'P0',type:'TFSA',balance:100000,growthRate:0}];
   c.realEstate=Array.from({length:5},(_,i)=>({name:'Rental '+i,type:'rental',value:100000,acb:100000,buildingAcb:100000,uccPool:80000,ccaEnabled:true,grossRentMonthly:1000}));
-  const progress=[],r=E.compareRentalSales(c,{propertyIndices:[0,1,2,3,4],startYear:2026,compareCCA:true,maxEvaluations:8,onProgress:p=>progress.push(p)});
+  const progress=[],r=E.compareRentalSales(c,{propertyIndices:[0,1,2,3,4],startYear:2026,compareCCA:true,searchMode:'thorough',maxEvaluations:8,onProgress:p=>progress.push(p)});
   assert.ok(r.rows.length<=8);assert.equal(r.searchMethod,'coordinate descent');assert.equal(r.budgetReached,true);
   assert.ok(progress.every(p=>p.evaluated<=p.maxEvaluations));
   assert.ok(r.rows.some(row=>row.sales.some(s=>!s.cca)));
   assert.notEqual(r.keepRow,r.rows[0]);assert.equal(r.keepRow.isCurrent,false);
+});
+
+test('quick rental search remains exhaustive when all combinations fit its budget',()=>{
+  const c=fixture();c.assumptions.targetDeathAge=66;
+  c.realEstate=[100000,200000].map((value,i)=>({name:'Rental '+i,type:'rental',value,acb:value,buildingAcb:value,uccPool:value,grossRentMonthly:500}));
+  const options={startYear:2026,propertyIndices:[0,1]},quick=E.compareRentalSales(c,options),thorough=E.compareRentalSales(c,{...options,searchMode:'thorough'});
+  assert.equal(quick.searchMode,'quick');assert.equal(quick.searchMethod,'exhaustive joint grid');assert.equal(quick.shortlisted,false);
+  assert.deepEqual(quick.rows,thorough.rows);assert.equal(quick.bestSpending.monthlySpend,thorough.bestSpending.monthlySpend);
+});
+
+test('quick shortlist matches an exhaustive short-horizon rental and CCA reference',()=>{
+  const c=fixture();c.accounts=[{name:'Cash',owner:'P0',type:'TFSA',balance:80000,growthRate:0}];
+  c.realEstate=[0,1].map(i=>({name:'Rental '+i,type:'rental',value:200000+i*50000,acb:160000,buildingAcb:120000,uccPool:100000,ccaEnabled:true,grossRentMonthly:600+i*200,appreciation:0}));
+  const opts={startYear:2026,propertyIndices:[0,1],compareCCA:true};
+  const quick=E.compareRentalSales(c,opts),exhaustive=E.compareRentalSales(c,{...opts,searchMode:'thorough'});
+  assert.equal(quick.shortlisted,true);assert.equal(exhaustive.searchMethod,'exhaustive joint grid');
+  assert.equal(quick.bestSpending.monthlySpend,exhaustive.bestSpending.monthlySpend);
+  assert.ok(quick.evaluated<exhaustive.evaluated);
+});
+
+test('quick rental finalists reproduce precise spending with category plans and an unselected rental',()=>{
+  const c=fixture(false);c.assumptions.estate={enabled:false};
+  c.assumptions.withdrawalPlan={2026:[30000,0]};
+  c.assumptions.spendingMode='categories';c.assumptions.spendingCategories=[{name:'Living',amount:2000,frequency:'monthly',startAge:65,endAge:100,inflation:0}];
+  c.accounts=[{name:'RRSP',owner:'P0',type:'RRSP',balance:150000,growthRate:0}];
+  c.realEstate=[0,1,2].map(i=>({name:'Rental '+i,type:'rental',value:200000,acb:160000,buildingAcb:120000,uccPool:100000,ccaEnabled:true,grossRentMonthly:700,saleYear:i===2?2028:0}));
+  const original=JSON.stringify(c),progress=[];
+  const result=E.compareRentalSales(c,{startYear:2026,propertyIndices:[0,1],compareCCA:true,onProgress:p=>progress.push(p)});
+  assert.equal(result.searchMode,'quick');assert.equal(result.shortlisted,true);
+  assert.ok(result.evaluated<=120);assert.ok(result.rows.length<=24);assert.equal(result.fullPrecisionEvaluated,result.rows.length);
+  assert.ok(progress.some(p=>p.phase==='verify'));assert.ok(progress.every(p=>p.evaluated<=p.maxEvaluations));
+  assert.equal(result.rows[0].isCurrent,true);assert.notEqual(result.keepRow,result.rows[0]);
+  for(const row of result.rows){
+    const applied=structuredClone(c);row.sales.forEach(s=>Object.assign(applied.realEstate[s.index],{saleYear:s.year,ccaEnabled:s.cca}));
+    if(!row.isCurrent)delete applied.assumptions.withdrawalPlan;
+    assert.equal(row.monthlySpend,Math.floor(E.maxSustainableSpend(applied,{startYear:2026,fastSolve:false})),row.label);
+    assert.equal(applied.realEstate[2].saleYear,2028);
+  }
+  assert.ok(result.bestSpending.monthlySpend>=Math.max(result.rows[0].monthlySpend,result.keepRow.monthlySpend));
+  assert.equal(JSON.stringify(c),original);
+});
+
+test('quick rental search respects small budgets and future purchase dates',()=>{
+  const c=fixture();c.realEstate=[0,1,2].map(i=>({name:'Rental '+i,type:'rental',value:100000,acb:80000,buildingAcb:60000,uccPool:50000,ccaEnabled:true,purchaseYear:2028,grossRentMonthly:500}));
+  const r=E.compareRentalSales(c,{startYear:2026,propertyIndices:[0,1,2],compareCCA:true,maxEvaluations:8});
+  assert.ok(r.evaluated<=8);assert.ok(r.rows.length<=r.evaluated);
+  r.rows.forEach(row=>row.sales.forEach(s=>assert.ok(s.year===0||s.year>=2028)));
+  assert.ok(r.keepRow);assert.ok(r.bestSpending.wealthAtMaxSpend);
+});
+
+test('screening spending precision stays within its bracket of the ordinary solver',()=>{
+  const c=fixture();c.accounts=[{name:'Cash',owner:'P0',type:'TFSA',balance:123456,growthRate:0}];
+  const precise=E.maxSustainableSpend(c,{startYear:2026,fastSolve:false});
+  const screened=E.maxSustainableSpend(c,{startYear:2026,fastSolve:false,spendingTolerance:25});
+  assert.ok(precise>=screened);assert.ok(precise-screened<25);
 });
 
 test('maximum-spending wealth uses identical lifespan, CCA and withdrawal settings to the spending estimate',()=>{
