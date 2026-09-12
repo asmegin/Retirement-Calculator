@@ -12,7 +12,7 @@ Reviewed 2026-09-08 against the requested hybrid/public application checklist. T
 | Discreet display | Eye toggle masks amounts, numeric inputs, monetary selectors, table figures and charts. The preference persists locally; calculations and exports retain actual values. |
 | Optional encrypted backups | Versioned plain JSON or AES-256-GCM encrypted envelopes; automatic detection, password dialog and legacy raw JSON compatibility. |
 | Three-step onboarding | Ages/province/retirement, income/spending period, then core account balances. Skip is available at each step. |
-| Demo profiles | Fictional couple and business/rental investor; visible badge and separate browser workspace, including when opened on Docker. Start My Own Plan returns to the personal plan or fresh setup. |
+| Demo profiles | Fictional couple, business/rental investor, and self-employed 11-rental landlord household; visible badge and separate browser workspace, including when opened on Docker. Start My Own Plan returns to the personal plan or fresh setup. |
 | Privacy notice | Client-side assurance in static mode; accurate own-server notice in Docker. Demo notice explicitly identifies browser-only fictional data. |
 | Publishing pipeline | Shared checks gate publication; QEMU/Buildx builds amd64 and arm64 images. The Docker workflow deploys `src/public` to Pages on main/master pushes using the requested Pages action versions. |
 
