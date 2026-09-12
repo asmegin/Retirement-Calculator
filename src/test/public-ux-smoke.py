@@ -136,6 +136,13 @@ try:
             assert page.locator('#master-goal').is_visible()
             assert page.get_by_role('button',name='Optimize my plan',exact=True).is_visible()
             assert page.get_by_text('Compare account withdrawal orders',exact=True).is_visible()
+            page.evaluate('async()=>{const c=structuredClone(PlanState.get());c.incomes.forEach(p=>{p.birthYear=new Date().getFullYear()-65;p.targetRetireAge=65;});c.assumptions.targetDeathAge=65;c.realEstate=[];await AppStorage.save(c);}')
+            page.locator('#run-master').click()
+            page.wait_for_selector('#action-results:not([hidden])',timeout=60000)
+            assert page.locator('#action-result-title').inner_text()=='Your plan for more monthly spending'
+            assert not page.locator('#withdrawal-options').evaluate('(el)=>el.open')
+            assert page.locator('#action-metrics > div').count()==1
+            assert page.locator('#master-sell-rentals').is_visible()
             assert 'never leaves your device' in page.locator('#privacy-notice').inner_text()
             assert not errors,errors
             context.close();print('PASS:',mode,'wizard/skip, privacy persistence, plain/encrypted exports, wrong-password recovery, demo isolation and mobile metadata.')
