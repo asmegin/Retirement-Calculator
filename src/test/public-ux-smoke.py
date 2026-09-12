@@ -86,13 +86,32 @@ try:
             assert page.locator('#backup-password').input_value()==''
             assert page.locator('#plan-file-status').inner_text()=='Plan imported and recalculated.'
             # Demonstrations never replace the personal plan, including edits made in demo mode.
-            for profile in ['couple','investor']:
+            for profile in ['couple','investor','landlord']:
                 page.goto(base+'/app-config.html');page.wait_for_selector('#demo-profile')
                 with page.expect_navigation(wait_until='load'):page.locator('#demo-profile').select_option(profile)
                 page.wait_for_function('window.PlanState && PlanState.get()?.demoProfile && AppStorage.isDemo')
                 assert page.locator('#demo-badge').is_visible()
                 assert page.evaluate('()=>BrowserPlanStore.readConfig()')==saved
                 if profile=='investor':assert page.evaluate('PlanState.get().realEstate[0].ccaEnabled') is True
+                if profile=='landlord':
+                    landlord=page.evaluate('PlanState.get()')
+                    assert landlord['demoProfile']=='landlord' and len(landlord['realEstate'])==11
+                    assert all(p['type']=='rental' and p['uccPool']<=p['buildingAcb']<=p['acb'] for p in landlord['realEstate'])
+                    assert all(p['incorporated'] for p in landlord['incomes'])
+                    assert all(p['rrspRoomOpening']==0 and p['tfsaRoomOpening']==0 for p in landlord['incomes'])
+                    rrsps=[a for a in landlord['accounts'] if a['type']=='RRSP']
+                    tfsas=[a for a in landlord['accounts'] if a['type']=='TFSA']
+                    assert len(rrsps)==2 and all(a['balance']>=725000 for a in rrsps)
+                    assert len(tfsas)==2 and all(a['balance']>=112000 and a['contribAmt']==7000 and a['contribFreq']=='yearly' for a in tfsas)
+                    salary={p['name']:p['salary'] for p in landlord['incomes']}
+                    assert all(a['contribAmt']==salary[a['owner']]*.18 and a['contribFreq']=='yearly' for a in rrsps)
+                    assert page.evaluate('()=>{const r=RetireEngine.simulate(PlanState.get());return r.years.length>0&&Number.isFinite(r.finalNetWorth)}')
+                    page.goto(base+'/plan-properties.html');page.wait_for_selector('[data-comparison=rental]')
+                    rental_tool=page.locator('[data-comparison=rental]')
+                    assert rental_tool.locator('input[type=checkbox][value]').count()==11
+                    rental_tool.get_by_label('Cedar Triplex',exact=True).check()
+                    assert rental_tool.get_by_label('Comparison depth',exact=True).is_visible()
+                    assert rental_tool.get_by_label('Comparison depth',exact=True).input_value()=='quick'
                 page.evaluate('async()=>{const c=structuredClone(PlanState.get());c.assumptions.desiredMonthlyIncome=9999;await AppStorage.save(c);}')
                 assert page.evaluate('()=>BrowserPlanStore.readConfig()')==saved
             with page.expect_navigation(wait_until='load'):page.locator('#start-own-plan').click()

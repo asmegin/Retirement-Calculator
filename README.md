@@ -205,7 +205,7 @@ New installations start with neutral household placeholders, no assets or proper
 
 The first-run wizard has three steps: household ages/province/retirement targets, income and monthly or annual spending, then RRSP/TFSA/non-registered/corporate balances. **Set this up later / Skip to Dashboard** is available at every step and saves the neutral starter plan without applying an unfinished wizard draft.
 
-**App Config ? Plan file and display ? Load Demo Profile** offers a fictional Canadian couple and an incorporated business owner with a rental. A prominent badge identifies demo mode. Demo plans, edits, scenarios and backups stay in a separate browser workspace?even on Docker. **Start My Own Plan** returns to your existing plan, or the first-run wizard if you have not set one up. Demo figures are illustrative, not Canadian statistical averages.
+**App Config → Plan file and display → Load Demo Profile** offers a fictional Canadian couple, an incorporated business owner with a rental, and a self-employed landlord household with funded RRSP/TFSA accounts and 11 rental houses. The 11-rental profile is useful for trying the Quick multi-rental comparison without entering a large portfolio by hand. A prominent badge identifies demo mode. Demo plans, edits, scenarios and backups stay in a separate browser workspace—even on Docker. **Start My Own Plan** returns to your existing plan, or the first-run wizard if you have not set one up. Demo figures are illustrative, not Canadian statistical averages.
 
 On iPhone/iPad, use Safari's **Share - Add to Home Screen** to open the app in standalone mode. Apple mobile tags, PNG icons and a web manifest are included; this does not add an offline cache to a hosted site.
 
