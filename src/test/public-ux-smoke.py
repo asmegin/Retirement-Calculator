@@ -84,7 +84,7 @@ try:
             page.locator('#backup-password').fill('Maple test phrase');page.locator('#backup-submit').click()
             page.wait_for_function('!document.getElementById("backup-dialog").open && PlanState.get().assumptions.desiredMonthlyIncome===5000')
             assert page.locator('#backup-password').input_value()==''
-            assert page.locator('#plan-file-status').inner_text()=='Plan imported and recalculated.'
+            assert page.locator('#plan-file-status').inner_text()=='Plan imported successfully and recalculated. You are now using your own plan.'
             # Demonstrations never replace the personal plan, including edits made in demo mode.
             for profile in ['couple','investor','landlord']:
                 page.goto(base+'/app-config.html');page.wait_for_selector('#demo-profile')
@@ -114,10 +114,28 @@ try:
                     assert rental_tool.get_by_label('Comparison depth',exact=True).input_value()=='quick'
                 page.evaluate('async()=>{const c=structuredClone(PlanState.get());c.assumptions.desiredMonthlyIncome=9999;await AppStorage.save(c);}')
                 assert page.evaluate('()=>BrowserPlanStore.readConfig()')==saved
-            with page.expect_navigation(wait_until='load'):page.locator('#start-own-plan').click()
-            page.wait_for_function('window.PlanState && PlanState.get() && !AppStorage.isDemo')
+            # Importing while a demo is active exits demo mode and writes the personal plan directly.
+            page.goto(base+'/app-config.html');page.wait_for_selector('#import-json-file',state='attached')
+            page.locator('#import-json-file').set_input_files({'name':'broken.json','mimeType':'application/json','buffer':b'{bad json'})
+            page.wait_for_function('document.getElementById("plan-file-status").textContent.startsWith("Import failed:")')
+            assert page.evaluate('AppStorage.isDemo') is True
+            page.locator('#import-json-file').set_input_files({'name':'personal.json','mimeType':'application/json','buffer':json.dumps(plain).encode()})
+            page.wait_for_function('window.PlanState && PlanState.get().assumptions.desiredMonthlyIncome===5000 && !AppStorage.isDemo')
+            assert page.locator('#plan-file-status').inner_text()=='Plan imported successfully and recalculated. You are now using your own plan.'
             assert page.evaluate('PlanState.get().assumptions.desiredMonthlyIncome')==5000
             assert page.locator('#demo-badge').is_hidden()
+            page.goto(base+'/index.html');page.wait_for_function('window.PlanState && PlanState.get()')
+            assert page.get_by_text('Your after-tax spending goal',exact=True).is_visible()
+            assert page.get_by_text('Estimated spending capacity',exact=True).is_visible()
+            assert page.get_by_role('tab',name='Net worth',exact=True).is_visible()
+            assert page.get_by_role('tab',name='Cash flow & tax',exact=True).is_visible()
+            assert page.get_by_role('tab',name='Contributions',exact=True).is_visible()
+            assert page.get_by_role('tab',name='Risk',exact=True).is_hidden()
+            page.get_by_role('tab',name='Net worth',exact=True).click();assert page.locator('#p-networth').is_visible()
+            page.goto(base+'/action-plan.html');page.wait_for_selector('#run-master:not([disabled])')
+            assert page.locator('#master-goal').is_visible()
+            assert page.get_by_role('button',name='Optimize my plan',exact=True).is_visible()
+            assert page.get_by_text('Compare account withdrawal orders',exact=True).is_visible()
             assert 'never leaves your device' in page.locator('#privacy-notice').inner_text()
             assert not errors,errors
             context.close();print('PASS:',mode,'wizard/skip, privacy persistence, plain/encrypted exports, wrong-password recovery, demo isolation and mobile metadata.')

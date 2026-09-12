@@ -3,10 +3,10 @@
   const E=RetireEngine,$=id=>document.getElementById(id);
   const money=v=>Number(v||0).toLocaleString('en-CA',{style:'currency',currency:'CAD',maximumFractionDigits:0});
   const buttons=[...document.querySelectorAll('[data-action]')];
-  let config=null,worker=null,generation=0,proposal=null,source=null,applying=false;
+  let config=null,worker=null,generation=0,proposal=null,source=null,applying=false,orderComparison=null;
   const key=c=>JSON.stringify(E.normalizeConfig(c));
   const people=c=>c.incomes.slice(0,c.assumptions.householdType==='single'?1:2);
-  function busy(value){buttons.forEach(b=>b.disabled=value||!config);$('cancel-action').hidden=!value;$('action-results').setAttribute('aria-busy',String(value));}
+  function busy(value){buttons.forEach(b=>b.disabled=value||!config);$('run-master').disabled=value||!config;$('cancel-action').hidden=!value;$('action-results').setAttribute('aria-busy',String(value));}
   function cancel(){generation++;worker?.terminate();worker=null;proposal=null;source=null;busy(false);$('apply-action').hidden=true;}
   function receive(c){
     const normalized=E.normalizeConfig(c);if(config&&key(config)===key(normalized))return;
@@ -18,6 +18,8 @@
     $('retirement-fixed').replaceChildren(new Option('Find ages for both',''));
     people(config).forEach((p,k)=>$('retirement-fixed').append(new Option('Keep '+p.name+' at age '+p.targetRetireAge,String(k))));
     describeRetirement();
+    orderComparison?.invalidate();$('order-comparison').replaceChildren();
+    orderComparison=PlanComparison.mount($('order-comparison'),{task:'withdrawals',getConfig:()=>config,onApply:async candidate=>{await AppStorage.save(candidate);$('action-status').textContent='Withdrawal order applied and saved.';}});
     if(previous)$('action-status').textContent='Your saved plan changed. Run a fresh check to use the latest settings.';
   }
   function describeRetirement(){
@@ -109,6 +111,7 @@
     }catch(error){cancel();$('action-status').textContent='Could not start the calculation: '+error.message;}
   }
   buttons.forEach(b=>b.onclick=()=>start(b.dataset.action));
+  $('run-master').onclick=()=>{const goal=$('master-goal').value;if(goal==='spending'){$('withdrawal-options').open=true;orderComparison.run();}else start(goal);};
   $('cancel-action').onclick=()=>{cancel();$('action-status').textContent='Calculation cancelled. Your saved plan is unchanged.';};
   ['retirement-gap','retirement-fixed','retirement-sell-rentals'].forEach(id=>$(id).onchange=()=>{cancel();$('action-results').hidden=true;describeRetirement();$('action-status').textContent='Search preferences updated. Choose Find earliest retirement to run again.';});
   $('apply-action').onclick=async()=>{
@@ -123,5 +126,5 @@
     finally{applying=false;busy(false);$('apply-action').disabled=false;}
   };
   AppStorage.bindState(()=>config,receive);AppStorage.subscribe(receive);
-  AppStorage.fetch('/api/config').then(r=>{if(!r.ok)throw new Error('Could not load the saved plan.');return r.json();}).then(receive).catch(error=>$('action-status').textContent=error.message);
+  AppStorage.fetch('/api/config').then(r=>{if(!r.ok)throw new Error('Could not load the saved plan.');return r.json();}).then(c=>{receive(c);const goal=new URLSearchParams(location.search).get('goal');if(goal&&[...$('master-goal').options].some(o=>o.value===goal)){$('master-goal').value=goal;$('run-master').click();}}).catch(error=>$('action-status').textContent=error.message);
 })();

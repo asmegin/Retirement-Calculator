@@ -107,9 +107,9 @@
 <p id="household-summary" style="color:var(--muted);font-size:.8rem"></p>
 
 <div class="metrics-grid">
-  <div class="metric-card"><label>After-tax spending goal</label><input type="number" class="val" id="m-goal" step="50" min="0" value="0" aria-label="After-tax spending goal per month"><div class="sub">per month, today&#39;s dollars</div><a class="btn ghost overview-withdrawals" href="./withdrawals.html?compare=1">Compare withdrawal options</a></div>
+  <div class="metric-card"><label>Your after-tax spending goal</label><input type="number" class="val" id="m-goal" step="50" min="0" value="0" aria-label="After-tax spending goal per month"><div class="sub">per month, today&#39;s dollars</div><a class="btn ghost overview-withdrawals" href="./action-plan.html?goal=spending">Optimize spending</a></div>
   <div class="metric-card"><label>Portfolio runs out</label><div class="val" id="m-depleted" style="color:var(--orange)">—</div><div class="sub" id="m-depleted-sub">&nbsp;</div></div>
-  <div class="metric-card"><label>Max sustainable spending</label><div class="val" id="m-max" style="color:var(--green)">$0</div><div class="sub" id="m-max-sub">&nbsp;</div></div>
+  <div class="metric-card"><label>Estimated spending capacity</label><div class="val" id="m-max" style="color:var(--green)">$0</div><div class="sub" id="m-max-sub">maximum after-tax amount per month</div></div>
   <div class="metric-card"><label>Lifetime tax paid</label><div class="val" id="m-tax" style="color:var(--danger)">$0</div><div class="sub">income tax + OAS clawback</div></div>
   <div class="metric-card"><label>Tax refunds reinvested</label><div class="val" id="m-refund" style="color:var(--violet)">$0</div><div class="sub">from RRSP deductions</div></div>
   <div class="metric-card"><label>Net worth at plan end</label><div class="val" id="m-nw">$0</div><div class="sub" id="m-nw-sub">&nbsp;</div></div>
@@ -141,7 +141,7 @@
         </select>
       </div>
       <div class="pick">
-        <a class="btn ghost" href="./withdrawals.html?compare=1">Calculate best withdrawal options</a>
+        <a class="btn ghost" href="./action-plan.html?goal=spending">Calculate best withdrawal options</a>
       </div>
       <p class="hint">Compare lower tax, more spending and ending net worth in the Withdrawal strategy finder.</p>
       <div class="pick">

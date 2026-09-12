@@ -27,7 +27,8 @@ def check_comparisons(page,base):
     page.wait_for_selector('#save-plan:enabled')
     assert page.locator('a[href="./plan-properties.html"][aria-current=page]').count()==1
     tool=page.locator('[data-comparison=rental]')
-    assert tool.get_by_label('Comparison depth',exact=True).is_hidden()
+    assert tool.get_by_label('Comparison depth',exact=True).is_visible()
+    assert tool.get_by_label('Comparison depth',exact=True).input_value()=='quick'
     # Validation must survive the worker boundary and offer the actual configuration page.
     for patch,expected in [({'uccPool':350000},['CCA pool remaining (UCC)','$350,000','$250,000']),
                            ({'buildingAcb':350000},['Building cost excluding land','$350,000','$300,000']),
@@ -56,10 +57,9 @@ def check_comparisons(page,base):
     tool.locator('.comparison-spending-table tr[data-option-label="Sell '+str(time.localtime().tm_year)+'"]').get_by_role('button',name='Review',exact=True).click()
     assert 'CCA recapture (100% taxable): $50,000' in tool.locator('.comparison-detail').inner_text()
     tool.get_by_role('button',name='Use this sale and CCA setting',exact=True).click()
+    page.wait_for_function('document.getElementById("save-status").textContent==="Sale and CCA settings applied and saved."')
     assert page.evaluate('PlanState.get().realEstate[0].saleYear')==time.localtime().tm_year
-    assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')==saved
-    page.locator('#save-plan').click()
-    page.wait_for_function('document.getElementById("save-status").textContent==="Plan saved."')
+    assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')['realEstate'][0]['saleYear']==time.localtime().tm_year
     page.reload();page.wait_for_selector('[data-comparison=rental]')
     assert page.evaluate('PlanState.get().realEstate[0].saleYear')==time.localtime().tm_year
     page.evaluate('c=>AppStorage.save(c)',saved)
@@ -71,7 +71,7 @@ def check_comparisons(page,base):
     page.get_by_text('Compare extra debt payments with investing',exact=True).click()
     page.get_by_role('button',name='Compare strategies',exact=True).click()
     assert 'ending net worth' in page.locator('#debt-comparison').inner_text()
-    # Select both rentals and ensure applying updates both dates but does not save automatically.
+    # Select both rentals and ensure applying saves both dates automatically.
     page.evaluate('''async()=>{const c=structuredClone(PlanState.get());c.realEstate.push({...c.realEstate[0],name:'Second rental',value:250000,acb:200000,buildingAcb:150000,uccPool:100000,ccaEnabled:false});await AppStorage.save(c);}''')
     multi_saved=page.evaluate('PlanState.get()')
     tool.get_by_label('Second rental',exact=True).check()
@@ -89,11 +89,10 @@ def check_comparisons(page,base):
     apply=tool.get_by_role('button',name='Use this sale and CCA setting',exact=True)
     if apply.is_enabled():
         apply.click()
-        assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')==multi_saved
-        # A saved-plan update in another tab cannot erase the unsaved proposal.
+        page.wait_for_function('document.getElementById("save-status").textContent==="Sale and CCA settings applied and saved."')
         proposed=page.evaluate('PlanState.get()')
+        assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')==proposed
         page.evaluate('c=>AppStorage.save(c)',multi_saved)
-        assert page.evaluate('PlanState.get()')==proposed
     page.goto(base+'/withdrawals.html?compare=1');tool=page.locator('[data-comparison=withdrawals]');tool.locator('.comparison-spending-table tbody tr').first.wait_for(timeout=60000)
     assert tool.locator('.comparison-spending-table tbody tr').count()==6
     assert 'Most monthly spending' in tool.inner_text()
@@ -102,7 +101,7 @@ def check_comparisons(page,base):
     assert page.evaluate('config.assumptions.withdrawalStrategy')=='rrsp-first'
     assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')==multi_saved
     page.locator('#save-plan').click();page.wait_for_function('document.getElementById("save-status").textContent==="Plan saved."')
-    page.goto(base+'/action-plan.html');page.wait_for_selector('[data-action=retirement]:enabled')
+    page.goto(base+'/action-plan.html');page.wait_for_selector('#run-master:enabled');page.get_by_text('Choose a specific check instead',exact=True).click();page.wait_for_selector('[data-action=retirement]:enabled')
     page.locator('#retirement-sell-rentals').check();page.locator('[data-action=retirement]').click()
     page.wait_for_selector('#action-results:not([hidden])',timeout=60000)
     assert 'Test rental:' in page.locator('#action-steps').inner_text()
@@ -142,11 +141,13 @@ def check_quick_rental_search(page,base):
     page.evaluate('c=>AppStorage.save(c)',original)
 
 def check_action_plan(page,url):
-    page.goto(url);page.wait_for_selector('[data-action=status]:enabled')
+    page.goto(url);page.wait_for_selector('#run-master:enabled')
+    page.get_by_text('Choose a specific check instead',exact=True).click()
+    page.wait_for_selector('[data-action=status]:enabled')
     original=page.evaluate('PlanState.get()')
     page.evaluate('async()=>{const c=structuredClone(PlanState.get());c.assumptions.mcRuns=100;await AppStorage.save(c);}')
     saved=page.evaluate('PlanState.get()')
-    assert page.get_by_role('link',name='Action plan',exact=True).get_attribute('aria-current')=='page'
+    assert page.get_by_role('link',name='Plan optimizer',exact=True).get_attribute('aria-current')=='page'
     page.screenshot(path=str(Path(tempfile.gettempdir())/'retirement-action-plan.png'),full_page=True)
     for kind in ['status','estate','tax','retirement']:
         page.locator(f'[data-action={kind}]').click()
