@@ -8,32 +8,36 @@
 <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png">
 <link rel="manifest" href="./manifest.webmanifest">
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Action plan · Retirement</title>
+<title>Plan optimizer · Retirement</title>
 <script src="./runtime-config.js"></script><script src="./theme.js"></script><script src="./privacy.js"></script><script src="./plan-schema.js"></script><script src="./backup-crypto.js"></script><script src="./backup-ui.js"></script><script src="./browser-store.js"></script><script src="./storage.js"></script><script src="./demo-profiles.js"></script>
 <script src="./planning-core.js"></script><script src="./engine.js"></script><script src="./worker-bundle.js"></script><script src="./workers.js"></script>
 <link rel="stylesheet" href="./help.css"><link rel="stylesheet" href="./theme.css"><link rel="icon" href="./icons/retirement.svg">
 <style>
 *{box-sizing:border-box}body{margin:0}[hidden]{display:none!important}.btn{cursor:pointer;text-decoration:none;display:inline-block;border:0}.btn:disabled{opacity:.55;cursor:wait}
-.action-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.action-choice{display:flex;flex-direction:column;margin:0}.action-choice h2{font-size:18px;margin:0 0 10px}.action-choice p{color:var(--muted);line-height:1.7;flex:1}.action-choice .btn{align-self:flex-start;white-space:normal;text-align:left}
+.action-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.action-choice{display:flex;flex-direction:column;margin:0}.action-choice h2{font-size:18px;margin:0 0 10px}.action-choice p{color:var(--muted);line-height:1.7;flex:1}.action-choice .btn{align-self:flex-start;white-space:normal;text-align:left}.master-plan{display:grid;grid-template-columns:minmax(220px,1fr) auto;gap:14px;align-items:end}.master-plan label{display:flex;flex-direction:column;gap:7px}.master-plan select{width:100%}.advanced-actions>summary{cursor:pointer;color:var(--accent);font-weight:700;margin:20px 0}
 .action-preferences{margin:22px 0}.action-preferences summary{cursor:pointer;color:var(--accent)}.action-preferences .form-grid{margin-top:16px;max-width:650px}.action-context{line-height:1.8;color:var(--muted);margin:0 0 24px}.action-results{margin-top:24px}.action-results p,.action-results li{line-height:1.8}.action-results li{margin-bottom:8px}.action-results h2{margin-top:0}.action-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:20px 0}.action-metrics>div{background:var(--panel2);padding:16px;border-radius:8px}.action-metrics strong{display:block;font-size:22px;margin:7px 0}.action-metrics small{color:var(--muted)}
 table{border-collapse:collapse;text-align:left;width:100%}td,th{padding:12px;border-bottom:1px solid var(--line)}th{background:var(--panel)}button:focus-visible,a:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-@media(max-width:760px){.action-choices,.action-metrics{grid-template-columns:1fr}.action-results{padding:18px}.action-choices .btn{width:100%}}
+@media(max-width:760px){.action-choices,.action-metrics,.master-plan{grid-template-columns:1fr}.action-results{padding:18px}.action-choices .btn{width:100%}}
 </style></head><body data-page="action-plan">
-<header class="workspace-header"><div><div class="eyebrow">PLAN / ACTION PLAN</div><h1>What would you like to improve?</h1><p>Choose a check, review the result, then apply any changes you want to keep.</p></div><a class="btn ghost" href="./index.html">View overview</a></header>
+<header class="workspace-header"><div><div class="eyebrow">PLAN / OPTIMIZER</div><h1>Optimize your plan</h1><p>Choose your main goal, run one calculation, then review and apply the result.</p></div><a class="btn ghost" href="./index.html">View overview</a></header>
 <main>
 <p id="action-context" class="action-context">Loading your saved plan…</p>
+<section class="card"><h2>What matters most?</h2><div class="master-plan"><label for="master-goal">Optimization goal<select id="master-goal"><option value="spending">Most monthly after-tax spending</option><option value="estate">Highest net worth at the end of my plan</option><option value="tax">Lowest lifetime tax while preserving my plan</option><option value="retirement">Earliest funded retirement</option><option value="status">Check risk and funding only</option></select></label><button class="btn" id="run-master" disabled>Optimize my plan</button></div><p class="inline-help">The result uses your saved retirement ages, planning horizon, accounts, pensions and properties. You review every proposed change before it is saved.</p></section>
+<details class="advanced-actions"><summary>Choose a specific check instead</summary>
 <div class="action-choices">
 <section class="card action-choice"><h2>Understand where you stand</h2><p>Check whether your spending is funded, try a difficult first decade, and test many possible market outcomes with Monte Carlo.</p><button class="btn" data-action="status" disabled>Check current status</button></section>
 <section class="card action-choice"><h2 id="retirement-heading">Retire sooner, together</h2><p id="retirement-description">Find the earliest funded retirement dates, keeping you within three calendar years of each other.</p><label><input type="checkbox" id="retirement-sell-rentals" aria-describedby="rental-retirement-help"> Consider selling rental properties</label><small id="rental-retirement-help" class="inline-help">Compare keeping rentals and selling in each future year. With multiple rentals, the search tests selling them all in the same year. At the earliest funded retirement dates, choose the sale timing with the highest ending net worth.</small><button class="btn" data-action="retirement" disabled>Find earliest retirement</button></section>
 <section class="card action-choice"><h2>Keep more for later</h2><p>Compare ways to withdraw from your accounts and look for a higher final net worth at your current retirement ages.</p><button class="btn" data-action="estate" disabled>Find steps to increase net worth</button></section>
 <section class="card action-choice"><h2>Pay less tax over time</h2><p>Look for a withdrawal schedule that reduces total projected tax while protecting your spending and final net worth.</p><button class="btn" data-action="tax" disabled>Find steps to reduce taxes</button></section>
 </div>
+</details>
 <details class="action-preferences" id="retirement-preferences"><summary>Retirement search preferences</summary><div class="form-grid">
 <div class="form-field"><label for="retirement-gap">Retire how far apart?</label><select id="retirement-gap" aria-describedby="gap-help"><option value="0">In the same calendar year</option><option value="1">Within 1 year</option><option value="3" selected>Within 3 years</option><option value="5">Within 5 years</option><option value="">No limit</option></select><small class="inline-help" id="gap-help">This compares calendar years, since you may be different ages.</small></div>
 <div class="form-field"><label for="retirement-fixed">Whose retirement can change?</label><select id="retirement-fixed" aria-describedby="fixed-help"></select><small class="inline-help" id="fixed-help">You can keep one person’s current retirement age. Dates already in the past stay fixed.</small></div>
 </div></details>
 <p id="action-status" class="tool-status" role="status" aria-live="polite">Choose a button to start. Your saved plan changes only when you apply a result.</p>
 <button class="btn ghost" id="cancel-action" hidden>Cancel calculation</button>
+<details class="advanced-actions" id="withdrawal-options"><summary>Compare account withdrawal orders</summary><div id="order-comparison"></div></details>
 <section class="card action-results" id="action-results" aria-labelledby="action-result-title" hidden>
 <h2 id="action-result-title" tabindex="-1"></h2><p id="action-summary"></p><div class="action-metrics" id="action-metrics"></div>
 <ol id="action-steps"></ol><p class="small-note" id="action-explanation"></p>

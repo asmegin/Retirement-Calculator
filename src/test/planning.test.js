@@ -109,6 +109,13 @@ test('rental sale comparison tests every year, CCA alternatives and holding with
   const later=r.rows.find(x=>x.label==='Sell 2027'),noCCA=r.rows.find(x=>x.label==='Sell 2027; no future CCA');assert.ok(later.sale.ccaRecapture>noCCA.sale.ccaRecapture);near(noCCA.sale.ccaRecapture,80000);
   assert.equal(JSON.stringify(c),original);assert.equal(c.assumptions.estate,undefined);
 });
+test('quick comparison bounds a long single-rental search and verifies its finalists',()=>{
+  const c=fixture();c.assumptions.targetDeathAge=110;c.accounts=[{name:'Cash',owner:'P0',type:'TFSA',balance:500000,growthRate:0}];
+  c.realEstate=[{name:'Long rental',type:'rental',value:500000,appreciation:2,acb:300000,buildingAcb:240000,uccPool:200000,ccaEnabled:true,grossRentMonthly:2000,sellingCostPct:5}];
+  const r=E.compareRentalSales(c,{propertyIndex:0,startYear:2026,searchMode:'quick',compareCCA:true,maxEvaluations:20});
+  assert.equal(r.searchMode,'quick');assert.equal(r.shortlisted,true);assert.ok(r.evaluated<=20);assert.ok(r.fullPrecisionEvaluated<=20);assert.ok(r.rows.length<20);
+  assert.ok(r.rows.some(row=>row.isCurrent));assert.ok(r.keepRow);assert.ok(r.bestSpending);
+});
 test('rental comparison respects per-property selection and rejects invalid tax inputs',()=>{
   const c=fixture();c.realEstate=[{name:'Home',type:'principal',value:100000},{name:'Rental',type:'rental',value:200000,acb:100000,buildingAcb:80000,uccPool:70000}];
   assert.throws(()=>E.compareRentalSales(c,{propertyIndex:0,startYear:2026}),/rental property/);

@@ -524,8 +524,9 @@ async function save() {
 
 async function importConfig(evt){
   const file=evt.target.files[0];if(!file)return;
-  try{const parsed=await PlanBackupUI.read(file);if(!parsed)return;receiveSettings(await AppStorage.save(parsed));loadBackups();toast('Configuration imported');}
-  catch(error){toast(error.message,true);}finally{evt.target.value='';}
+  const status=el('plan-file-status');
+  try{if(status)status.textContent='Reading plan…';const parsed=await PlanBackupUI.read(file);if(!parsed){if(status)status.textContent='Import cancelled.';return;}if(AppStorage.isDemo)await AppStorage.leaveDemo();delete parsed.demoProfile;receiveSettings(await AppStorage.save(parsed));loadBackups();if(status)status.textContent='Plan imported successfully and recalculated. You are now using your own plan.';toast('Plan imported successfully');}
+  catch(error){if(status)status.textContent='Import failed: '+error.message;toast(error.message,true);}finally{evt.target.value='';}
 }
 
 async function backupNow() {

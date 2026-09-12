@@ -5,9 +5,11 @@ let config,rentalTool,workspaceDirty=false,saving=false;
 
 function render(){
   rentalTool?.invalidate?.();$('rental-comparison').replaceChildren();
-  rentalTool=PlanComparison.mount($('rental-comparison'),{task:'rental',getConfig:()=>config,onApply:c=>{
-    if(saving)return;
-    config=E.normalizeConfig(c);workspaceDirty=true;$('save-status').textContent='Sale and CCA settings applied. Save plan to keep them.';
+  rentalTool=PlanComparison.mount($('rental-comparison'),{task:'rental',getConfig:()=>config,onApply:async c=>{
+    if(saving)throw new Error('A save is already in progress.');
+    saving=true;$('save-plan').disabled=true;
+    try{config=await AppStorage.save(E.normalizeConfig(c));workspaceDirty=false;$('save-status').textContent='Sale and CCA settings applied and saved.';return config;}
+    finally{saving=false;$('save-plan').disabled=false;}
   }});
   $('debt-comparison').replaceChildren(advanced(debtComparisonSection(()=>config),'Compare extra debt payments with investing'));
 }

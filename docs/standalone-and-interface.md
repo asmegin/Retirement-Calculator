@@ -21,7 +21,7 @@ Deployment mode is explicit. Static sites use atomic IndexedDB transactions; fil
 | Page | Contents |
 | --- | --- |
 | Overview | Monthly after-tax spending, retirement ages and a projection graph. |
-| Action plan (under Plan) | Current-status and Monte Carlo checks, close retirement-date searches, net-worth and tax searches, with explanations and explicit Apply controls. |
+| Plan optimizer (under Plan) | One goal selector for spending, end-of-plan net worth, lifetime tax, retirement dates, or risk/funding; includes withdrawal-order comparison, Monte Carlo checks, explanations and explicit Apply controls. |
 | Plan details | Net worth, cash flow, contribution targets, yearly ledger, timeline, and risk analysis. |
 | Household | Household type, adults and children, with optional childcare expenses. |
 | Accounts | Investment accounts, contribution room, FHSA history and home buyer repayments. |
@@ -30,7 +30,6 @@ Deployment mode is explicit. Static sites use atomic IndexedDB transactions; fil
 | Properties | Property and loan balances; Advanced Options contain payments, sales, tax costs, CCA, prepayments, and Smith-style investment borrowing. |
 | Pensions | Government and optional workplace pensions; optional earnings-history calculations. Workplace plans with age estimates show a start-age dropdown and matching read-only monthly amounts. Edit statement estimates in Advanced Options. Linking payments to retirement uses the member’s retirement age; existing ages between estimates are labelled as estimated. |
 | Compare scenarios | Separate alternatives with net-worth, tax, benefit and shortfall deltas. |
-| Withdrawal strategy | Bounded withdrawal search, apply controls and an exportable annual schedule. |
 | App Config | Plan export/import, optional encryption, demo profiles, Hide figures, appearance, HTTP Auth status/instructions, storage mode and backups. |
 
 Every navigation link opens a dedicated HTML page; the server also accepts the corresponding extensionless route. There are no section-anchor navigation links. Overview and Plan details are direct links; Accounts is a Configuration sub-menu and Plan settings is under Plan. Unsaved configuration edits are identified beside Save changes and are preserved when another window sends a plan update. `config.html` remains a household/setup entry point; `planning.html` remains a scenario entry point for existing bookmarks.
@@ -41,7 +40,7 @@ Account and property forms initially show names, ownership, type, and balances/v
 
 **Goal reached estimate per year** defaults to 85%. The engine first calculates the full RRSP contribution required to reach the chosen tax rate. It then models the selected percentage as the actual contribution, uses that amount for the deduction and room consumption, and calculates any reinvested refund from that contribution. Fixed payroll deposits and HBP repayment budgets remain separate. A 0% estimate gives no extra goal contribution; 100% models the full target.
 
-Overview slider labels update immediately; calculation waits for a 650 ms pause. Identical server save echoes do not rebuild charts. Retirement searches now run on demand in **Plan ? Action plan**, separately from the projection graph.
+Overview slider labels update immediately; calculation waits for a 650 ms pause. Identical server save echoes do not rebuild charts. Retirement searches now run on demand in **Plan → Plan optimizer**, separately from the projection graph.
 
 **Check current status** tests spending coverage, a difficult first decade, and 100?2,000 Monte Carlo paths (using the configured run count within those limits). It explains the results without changing the plan. **Find earliest retirement** calls `solveRetirementAges`, defaulting to retirement dates within three calendar years. Users can adjust the gap or keep one person's age fixed. The search minimizes the year by which both have retired, then favours closer dates. Past retirement dates remain fixed. Applying ages clears any prior withdrawal schedule so it can be recalculated.
 

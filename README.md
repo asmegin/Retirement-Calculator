@@ -4,11 +4,11 @@ A retirement calculator built for **Canada**, for one adult or a couple. Plan wi
 
 Run it as a **completely static site on GitHub Pages**, **on Docker/Unraid**, **offline from a ZIP**, or **locally with Node.js**. No subscription or external financial account connection is required.
 
-**Latest tagged release: 1.0.5** · [Download the standalone app](https://github.com/asmegin/Retirement-Calculator/releases/latest/download/retirement-calculator-standalone.zip) · [Releases](https://github.com/asmegin/Retirement-Calculator/releases) · [Version 1.0.5 release notes](docs/releases/v1.0.5.md)
+**Latest tagged release: 1.0.6** · [Download the standalone app](https://github.com/asmegin/Retirement-Calculator/releases/latest/download/retirement-calculator-standalone.zip) · [Releases](https://github.com/asmegin/Retirement-Calculator/releases) · [Version 1.0.6 release notes](docs/releases/v1.0.6.md)
 
 If the repository is private, sign in to GitHub with an account that has access before opening these downloads.
 
-**Current release: 1.0.5 (`v1.0.5`)** - [Changes and upgrade notes](docs/releases/v1.0.5.md). Download the [latest release](https://github.com/asmegin/Retirement-Calculator/releases/latest) or see the [hybrid deployment guide](docs/hybrid-deployment.md).
+**Current release: 1.0.6 (`v1.0.6`)** - [Changes and upgrade notes](docs/releases/v1.0.6.md). Download the [latest release](https://github.com/asmegin/Retirement-Calculator/releases/latest) or see the [hybrid deployment guide](docs/hybrid-deployment.md).
 
 ## Contents
 
@@ -124,7 +124,7 @@ docker compose up -d --build
 
 Open **http://localhost:3333**, or **http://YOUR-SERVER-IP:3333** from another device on your network.
 
-The included [compose.yaml](compose.yaml) can build this checkout or use `ghcr.io/asmegin/retirement-calculator:${APP_VERSION}`. The command above builds the current source as `1.0.5`. To use the published image instead, run `docker compose pull` followed by `docker compose up -d --no-build`. The container restarts automatically and stores the shared plan and backups in `./data`. Keep that directory when updating or replacing the container.
+The included [compose.yaml](compose.yaml) can build this checkout or use `ghcr.io/asmegin/retirement-calculator:${APP_VERSION}`. The command above builds the current source as `1.0.6`. To use the published image instead, run `docker compose pull` followed by `docker compose up -d --no-build`. The container restarts automatically and stores the shared plan and backups in `./data`. Keep that directory when updating or replacing the container.
 
 Useful commands, run from the same directory:
 
@@ -154,7 +154,7 @@ In **Docker → Add Container**, use:
 | Setting | Value |
 | --- | --- |
 | Name | `retirement-calculator` |
-| Repository | `ghcr.io/asmegin/retirement-calculator:1.0.5` |
+| Repository | `ghcr.io/asmegin/retirement-calculator:1.0.6` |
 | Network type | `Bridge` |
 | Container port | `3333` / TCP |
 | Host port | `3333`, or another unused port |
@@ -217,7 +217,7 @@ Have your account balances, contribution room, pension estimates and property/de
 4. **Accounts:** enter balances, ownership, growth assumptions, contribution amounts/frequency and unused contribution room. Use Advanced Options for taxable cost basis, FHSA details, employer matches and other account-specific settings.
 5. **Pensions:** enter CPP/QPP and OAS estimates and start ages. Add a workplace pension only if you have one. Start with statement estimates; earnings-history mode is optional.
 6. **Properties:** add your home, rentals, mortgages and HELOCs. Review Advanced Options for payments, rental costs, ownership, selling costs and tax information.
-7. Select **Save changes** on each configuration page you edit. Check **Overview**, then run **Action plan → Check current status**.
+7. Select **Save changes** on each configuration page you edit. Check **Overview**, then run **Plan optimizer → Check risk and funding only**.
 8. Open **App Config ? Plan file and display** and select **Export Plan** to keep an initial backup.
 
 Labels show whether amounts are monthly, yearly or percentages. For an existing loan, enter its **current balance**, rate and payment. For a rental, enter **remaining UCC**, not the total depreciation already claimed. Opening contribution room should come from your own records; it is different from the account balance.
@@ -228,13 +228,12 @@ Labels show whether amounts are monthly, yearly or percentages. For an existing 
 
 | Page | Use it to |
 | --- | --- |
-| Overview | Adjust the spending goal and retirement-age sliders, and view the main projection. |
+| Overview | See your after-tax spending goal and estimated spending capacity, adjust retirement ages, and switch among projection, net-worth, cash-flow and contribution graphs. |
 | Plan details | Inspect charts, the yearly ledger, individual year details, contribution targets, timeline and market analysis. Export the ledger or print. |
 | Configuration | Edit Household, Accounts, Employment, Properties and Pensions. Open Advanced Options for detailed inputs. |
 | Plan settings | Change spending, planning assumptions, spending phases and optional estate/survivor settings. |
-| Action plan | Check funding, find earlier retirement dates, increase net worth or reduce lifetime tax. |
+| Plan optimizer | Choose one main goal, check risk and funding, compare withdrawal orders, find earlier retirement dates, increase end-of-plan net worth or reduce lifetime tax. |
 | Compare scenarios | Try an alternative retirement date, pension start or home and compare it with the current plan. |
-| Withdrawal strategy | Compare account orders, then search and export an annual withdrawal schedule. |
 | App Config | Change appearance, view connection/authentication status and manage backups. |
 
 On smaller screens, open **Menu** to reveal navigation. Wide result tables scroll sideways. Long calculations run in a worker; use their **Cancel** button to stop a search.
@@ -243,7 +242,7 @@ On smaller screens, open **Menu** to reveal navigation. Wide result tables scrol
 
 ### Withdrawal order and strategy finder
 
-Select **Compare withdrawal options** on Overview or **Calculate best withdrawal options** beside the withdrawal order in Plan details. Both open the same **Withdrawal strategy** page.
+Select **Optimize spending** on Overview or **Calculate best withdrawal options** beside the withdrawal order in Plan details. Both open **Plan optimizer**, where the goal selector and the expandable withdrawal-order comparison replace the former separate Withdrawal strategy page.
 
 The comparison includes your current settings and all five account orders. It highlights options for **lowest lifetime tax**, **highest ending net worth**, and **most monthly spending**, with changes from your current plan. Review an option to see how its order works. **Use this withdrawal order** changes the workspace; select **Save plan** to keep it. Applying an order does not automatically raise your spending goal to the sustainable-spending estimate.
 
@@ -255,13 +254,13 @@ Go to **Plan → Properties → When should I sell my rental?**. Edit property d
 
 Select one or more rentals and choose **Calculate best sale years**. The main result shows **extra sustainable after-tax spending per month**, compared with the capacity under your current settings. Sale years are ranked by spending; expand **Tax and inheritance trade-offs** for those secondary outcomes. Optionally compare stopping future CCA claims. Review a year to see sale proceeds, mortgage discharge, capital gain, recapture, terminal loss and estimated tax. **Use this sale and CCA setting** updates the planning workspace; **Save plan** keeps it. Historical CCA can still be recaptured even if future claims are stopped.
 
-For multiple rentals in **Plan → Properties**, **Quick comparison** searches up to 120 options and fully verifies the strongest candidates before showing results. Choose **Thorough comparison** for the broader 400-option search. Small searches and single-rental comparisons still check every combination. Both modes keep your plan unchanged until you Apply and Save; a limited search can miss a better result. See [rental comparison methods](docs/withdrawal-and-rental-comparisons.md).
+In **Plan → Properties**, **Quick comparison** screens up to 30 options for one rental or 120 for multiple rentals and fully verifies the strongest candidates before showing results. Choose **Thorough comparison** to check every year for one rental or use the broader 400-option joint search. Selecting **Use this sale and CCA setting** applies and saves the result immediately; a limited search can miss a better result. See [rental comparison methods](docs/withdrawal-and-rental-comparisons.md).
 
 With one rental, the comparison tests keeping it and selling at the **start** of each projected year. The keeping comparison retains all selected rentals and evaluates both alternatives at their own maximum supported spending, using identical lifespan and estate settings. Unselected properties keep their entered sale dates. Spending estimates follow your retirement dates, current lifespan settings, spending schedule and assumed returns, with no minimum inheritance reserved. They are estimates, not guarantees, and the $40,000/month search ceiling is flagged when reached. The separate tax and inheritance illustrations include terminal tax for the keep option as well, using the configured lifespans. Attached HELOCs continue under their entered schedules. The tool explains its tax assumptions below the results. Applying a property alternative clears an existing annual withdrawal schedule so withdrawals can be recalculated.
 
 ### Retire sooner, together
 
-In **Action plan**, select **Find earliest retirement**. For a couple, open the search preferences to choose how far apart to retire or hold one person's retirement age fixed. The search tests whole years through age 75, before the planning horizon; past retirement dates remain fixed.
+In **Plan optimizer**, choose **Earliest funded retirement**, or open the specific checks and select **Find earliest retirement**. For a couple, open the search preferences to choose how far apart to retire or hold one person's retirement age fixed. The search tests whole years through age 75, before the planning horizon; past retirement dates remain fixed.
 
 Enable **Consider selling rental properties** to include rental sales. With one rental, every projected sale year is tested. With multiple rentals, this search tests selling them all in a common year, as well as the current dates and keeping them. It does not try every possible combination of separate sale dates.
 
@@ -282,8 +281,8 @@ Use **Compare scenarios** to experiment without immediately replacing the curren
 | Edit a configuration field | Unsaved until **Save changes**. |
 | Change an Overview control | Automatically recalculates and saves after a short pause. |
 | Run a comparison/search | Calculates a proposal without saving it. |
-| Apply a result in Action plan | Applies **and saves** the proposed plan. |
-| Use a result in Properties or Withdrawal strategy | Updates that page; **Save changes / Save plan** is still required. |
+| Apply a result in Plan optimizer | Applies **and saves** the proposed plan. |
+| Use a sale and CCA result in Plan Properties | Applies and saves the selected settings immediately. |
 | Import Plan | Replaces the current saved plan with the imported plan. |
 
 ## Saving, backups and moving your plan

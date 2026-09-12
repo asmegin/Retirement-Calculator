@@ -1780,12 +1780,12 @@
   // Keeping the ordinary withdrawal solver during screening avoids introducing a
   // second approximation into the spending bracket. Nothing approximate is applied.
   function searchQuickPortfolioSaleYears(ctx,indices,opts){
-    var cap=Math.max(8,Math.min(2000,int(opts.maxEvaluations,120))),tolerance=25;
+    var cap=Math.max(8,Math.min(2000,int(opts.maxEvaluations,indices.length===1?30:120))),tolerance=25;
     var properties=indices.map(function(i){return ctx.cfg.realEstate[i];});
     var end=ctx.spendingBaseline.endYear,earliest=properties.map(function(p){return Math.max(ctx.start,p.purchaseYear||ctx.start);});
     var variants=properties.map(function(p){return opts.compareCCA&&p.ccaEnabled?[true,false]:[p.ccaEnabled];});
     var fullSize=properties.reduce(function(n,p,k){return n*(1+Math.max(0,end-earliest[k]+1))*variants[k].length;},1);
-    if(fullSize<=cap-2)return searchPortfolioSaleYears(ctx,indices,Object.assign({},opts,{maxEvaluations:cap}));
+    if(fullSize<=cap-2)return indices.length===1?searchSinglePropertySaleYears(ctx,indices[0],opts):searchPortfolioSaleYears(ctx,indices,Object.assign({},opts,{maxEvaluations:cap}));
     var candidates=[],seen=new Map(),rows=[],limited=false;
     function key(sales,current){return (current?'current|':'alternative|')+sales.map(function(s){return s.index+':'+s.year+':'+(s.cca?1:0);}).join('|');}
     function label(sales){return sales.map(function(s,k){return properties[k].name+(s.year?': sell '+s.year:': keep')+(properties[k].ccaEnabled&&!s.cca?' (no future CCA)':'');}).join(', ');}
@@ -1946,7 +1946,7 @@
     var ctx={cfg:cfg,start:start,baseline:baseline,spendingBaseline:spendingBaseline,spendingEstate:spendingEstate,rows0MonthlySpend:0};
 
     var mode=opts.searchMode==='thorough'?'thorough':'quick';
-    var search=indices.length<=1?searchSinglePropertySaleYears(ctx,indices[0],opts):(mode==='quick'?searchQuickPortfolioSaleYears:searchPortfolioSaleYears)(ctx,indices,opts);
+    var search=mode==='quick'?searchQuickPortfolioSaleYears(ctx,indices,opts):(indices.length<=1?searchSinglePropertySaleYears(ctx,indices[0],opts):searchPortfolioSaleYears(ctx,indices,opts));
     var rows=search.rows;
     if(indices.length<=1)rows.forEach(function(row){var s=row.sales[0];row.year=s.year;row.cca=s.cca;row.sale=s.sale;row.saleIncomeTax=s.saleIncomeTax;});
 
@@ -1958,7 +1958,7 @@
     var result={
       rows:rows,startYear:start,endYear:spendingBaseline.endYear,includesTerminalTax:true,
       keepRow:search.keepRow,bestSpending:bestSpending,searchMethod:search.method||'every sale year',evaluated:search.evaluated||rows.length,maxEvaluations:search.maxEvaluations||rows.length,budgetReached:!!search.budgetReached,
-      searchMode:indices.length>1?mode:'exhaustive',shortlisted:!!search.shortlisted,fullPrecisionEvaluated:rows.length,
+      searchMode:mode,shortlisted:!!search.shortlisted,fullPrecisionEvaluated:rows.length,
       bestTax:funded.reduce(function(a,b){return !a||b.tax<a.tax?b:a;},null),
       bestEstate:funded.reduce(function(a,b){return !a||b.estate>a.estate?b:a;},null)
     };

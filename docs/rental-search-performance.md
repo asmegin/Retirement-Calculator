@@ -1,6 +1,6 @@
 # Rental comparison performance
 
-Quick comparison is the default for multiple rentals. It screens up to 120 options with a $25/month spending bracket, then calculates the current plan, keeping the selected rentals and the strongest candidates at full precision. Only verified results can be reviewed or applied. Thorough retains the previous joint search with a 400-option default budget. Small grids and single-rental comparisons remain exhaustive.
+Quick comparison is the default for every rental search. It screens up to 30 options for one rental or 120 options for multiple rentals with a $25/month spending bracket, then calculates the current plan, keeping the selected rentals and the strongest candidates at full precision. Only verified results can be reviewed or applied. Thorough retains exhaustive single-rental searches and the broader 400-option joint search. Small grids that fit the Quick budget remain exhaustive.
 
 ## Search and verification
 

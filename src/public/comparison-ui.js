@@ -26,7 +26,7 @@
         return box;
       });
       const toggle=el('label','Also compare stopping future CCA claims');toggle.prepend(cca);controls.append(toggle);
-      controls.append(searchField);searchField.hidden=true;
+      controls.append(searchField);
       section.append(controls,el('p','Select one or more rentals to find the best sale years for each jointly. Before calculating, check Properties → Advanced options: purchase cost, building cost excluding land, building share of sale proceeds, remaining UCC, ownership, selling costs, rental expenses and debt. Historical CCA is still recaptured when future claims are disabled.','inline-help'));
     }
     function selectedIndices(){return propertyChecks.filter(b=>b.checked).map(b=>Number(b.value));}
@@ -35,7 +35,7 @@
     let worker=null,revision=0,snapshot=null,source=null;
     function stop(){revision++;worker?.terminate();worker=null;run.disabled=rental&&!propertyChecks.length;cancel.hidden=true;section.setAttribute('aria-busy','false');}
     function invalidate(){stop();output.replaceChildren();status.textContent='Inputs changed. Calculate again to update the comparison.';}
-    propertyChecks.forEach(box=>box.onchange=()=>{searchField.hidden=selectedIndices().length<2;invalidate();});cca.onchange=invalidate;searchMode.onchange=invalidate;
+    propertyChecks.forEach(box=>box.onchange=invalidate);cca.onchange=invalidate;searchMode.onchange=invalidate;
     cancel.onclick=()=>{stop();output.replaceChildren();status.textContent='Comparison cancelled.';};
     run.disabled=rental&&!propertyChecks.length;
     if(run.disabled)status.textContent='Add a rental under Configuration > Properties to compare sale dates.';
@@ -56,12 +56,14 @@
       panel.append(el('p',row.funded?'Current spending is funded throughout the comparison.':'Current spending first falls short in '+row.shortfallYear+'.'));
       const apply=el('button',rental?'Use this sale and CCA setting':'Use this withdrawal order','btn');apply.type='button';
       apply.disabled=row===result.rows[0];
-      apply.onclick=()=>{
+      apply.onclick=async()=>{
         if(key(getConfig())!==source){invalidate();return;}
         const c=copy(snapshot);
         if(rental){row.sales.forEach(s=>{c.realEstate[s.index].saleYear=s.year;c.realEstate[s.index].ccaEnabled=s.cca;});delete c.assumptions.withdrawalPlan;}
         else {c.assumptions.withdrawalStrategy=row.strategy;c.assumptions.withdrawalPlan=row.plan;}
-        stop();onApply(c);output.replaceChildren();status.textContent='Applied on this page. Save your plan to keep the change.';
+        apply.disabled=true;status.textContent=rental?'Applying and saving sale settings…':'Applying selection…';
+        try{await onApply(c);stop();output.replaceChildren();status.textContent=rental?'Sale and CCA settings applied and saved.':'Applied on this page. Save your plan to keep the change.';}
+        catch(error){apply.disabled=false;status.textContent='Could not save: '+error.message;}
       };panel.append(apply);
       panel.scrollIntoView({behavior:'smooth',block:'nearest'});
     }
