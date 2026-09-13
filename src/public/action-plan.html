@@ -23,6 +23,7 @@ table{border-collapse:collapse;text-align:left;width:100%}td,th{padding:12px;bor
 <main>
 <p id="action-context" class="action-context">Loading your saved plan…</p>
 <section class="card"><h2>What matters most?</h2><div class="master-plan"><label for="master-goal">Optimization goal<select id="master-goal"><option value="spending">Most monthly after-tax spending</option><option value="estate">Highest net worth at the end of my plan</option><option value="tax">Lowest lifetime tax while preserving my plan</option><option value="retirement">Earliest funded retirement</option><option value="status">Check risk and funding only</option></select></label><button class="btn" id="run-master" disabled>Optimize my plan</button></div><p class="inline-help">The result uses your saved retirement ages, planning horizon, accounts, pensions and properties. You review every proposed change before it is saved.</p></section>
+<p id="retirement-spending-help" class="inline-help" hidden>Compare retiring together every five years, from the first person’s age 50 through their planning lifespan. Each row assumes working until those retirement ages. Past years are marked unavailable. Later retirement means fewer years of retirement spending.</p>
 <label><input type="checkbox" id="master-sell-rentals"> Include rental sale timing and future CCA in optimization</label>
 <details class="advanced-actions"><summary>Choose a specific check instead</summary>
 <div class="action-choices">
@@ -41,6 +42,7 @@ table{border-collapse:collapse;text-align:left;width:100%}td,th{padding:12px;bor
 <details class="advanced-actions" id="withdrawal-options"><summary>Compare account withdrawal orders</summary><div id="order-comparison"></div></details>
 <section class="card action-results" id="action-results" aria-labelledby="action-result-title" hidden>
 <h2 id="action-result-title" tabindex="-1"></h2><p id="action-summary"></p><div class="action-metrics" id="action-metrics"></div>
+<div id="retirement-spending-options" class="data-scroll" hidden></div>
 <ol id="action-steps"></ol><p class="small-note" id="action-explanation"></p>
 <details id="action-schedule" hidden><summary>Review year-by-year withdrawals</summary><div class="data-scroll" id="action-schedule-table"></div></details>
 <div class="row-actions"><button class="btn" id="apply-action" hidden>Apply changes</button><a class="btn ghost" href="./plan-settings.html">Adjust plan settings</a></div>

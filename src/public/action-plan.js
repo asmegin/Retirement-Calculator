@@ -3,6 +3,7 @@
   const E=RetireEngine,$=id=>document.getElementById(id);
   const money=v=>Number(v||0).toLocaleString('en-CA',{style:'currency',currency:'CAD',maximumFractionDigits:0});
   const buttons=[...document.querySelectorAll('[data-action]')];
+  $('master-goal').add(new Option('Retirement age and monthly spending','retirement-spending'),1);
   let config=null,worker=null,generation=0,proposal=null,source=null,applying=false,orderComparison=null;
   const key=c=>JSON.stringify(E.normalizeConfig(c));
   const people=c=>c.incomes.slice(0,c.assumptions.householdType==='single'?1:2);
@@ -42,19 +43,39 @@
   }
   function show(kind,result,snapshot){
     $('action-results').hidden=false;$('action-metrics').replaceChildren();$('action-steps').replaceChildren();$('action-schedule').hidden=true;
+    $('retirement-spending-options').hidden=true;$('retirement-spending-options').replaceChildren();
     $('action-status').textContent='Check complete. Review the result below.';
-    if(result.config&&result.objective){
+    if(result.objective==='retirement-spending'){
+      $('action-result-title').textContent='Retirement age and monthly spending';
+      $('action-summary').textContent='Choose the balance of earlier retirement and higher monthly spending that suits you.';
+      if(!result.rows.some(row=>!row.unavailable))$('action-summary').textContent='No future retirement options fall between age 50 and your configured planning lifespan. Review your household ages and lifespan settings.';
+      $('action-explanation').textContent='Ages are paired in the same calendar year, starting at the first person’s age 50. Each available option runs the combined spending optimizer. Amounts are after tax in today’s dollars, through your saved planning lifespan. Later retirement leaves fewer spending years. Applying saves both retirement ages, the monthly spending goal and the optimized settings. A bounded search may miss a better combination.';
+      const table=document.createElement('table'),head=document.createElement('thead'),header=document.createElement('tr'),body=document.createElement('tbody');
+      ['Retirement ages','Year','Monthly after-tax spending','Choose'].forEach(label=>{const th=document.createElement('th');th.scope='col';th.textContent=label;header.append(th);});head.append(header);
+      result.rows.forEach(row=>{
+        const tr=document.createElement('tr');[row.label,row.year,row.unavailable||money(row.monthlySpend)+(row.monthlySpend>=39999?'+ (search ceiling)':'')].forEach(value=>{const td=document.createElement('td');td.textContent=value;tr.append(td);});
+        const td=document.createElement('td');if(!row.unavailable&&row.monthlySpend>0){const select=document.createElement('button');select.type='button';select.className='btn ghost';select.textContent='Choose '+row.label;select.onclick=()=>{
+          proposal=structuredClone(row.config);$('apply-action').textContent='Apply and save retirement and spending';$('apply-action').hidden=false;
+          $('action-steps').replaceChildren();step(row.label+' — '+money(row.monthlySpend)+'/month after tax.');
+          step('This saves the retirement ages, optimized pension/contribution/withdrawal settings, and any selected rental changes.');
+          $('action-summary').textContent='Selected '+row.label+' at '+money(row.monthlySpend)+'/month.';withdrawals(row.result);
+        };td.append(select);}tr.append(td);body.append(tr);
+      });table.append(head,body);$('retirement-spending-options').append(table);$('retirement-spending-options').hidden=false;
+    }else if(result.config&&result.objective){
       const spending=result.objective==='spending',estate=result.objective==='estate';
       $('action-result-title').textContent=spending?'Your plan for more monthly spending':estate?'Your plan for higher ending net worth':'Your plan for lower lifetime tax';
       $('action-summary').textContent=result.improved?'A combined plan improved your selected goal. Review the changes below.':'No improvement was found among the combined plans tested.';
+      if(spending&&!result.improved)$('action-summary').textContent='Your current settings already support the displayed spending capacity. Apply it to save that amount as your spending goal.';
       metric(spending?'Monthly after-tax spending capacity':estate?'Ending net worth':'Lifetime tax',money(spending?result.monthlySpend:estate?result.result.finalNetWorthReal:result.result.lifetimeTax+result.result.lifetimeCorporateTax),spending?'Current capacity '+money(result.baselineSpend)+'/month; today’s dollars':'At your current spending goal');
+      if(spending&&result.monthlySpend>=39999)step('This result reaches the $40,000/month search ceiling. The model may support more; the optimizer does not compare spending above that limit.');
       people(result.config).forEach((p,k)=>{for(const field of ['cppStartAge','oasStartAge'])if(p[field]!==snapshot.incomes[k][field])step(p.name+': '+(field==='cppStartAge'?'CPP / QPP':'OAS')+' starts at age '+p[field]+' (was '+snapshot.incomes[k][field]+').');});
       step('Withdrawal order: '+PlanComparison.names[result.config.assumptions.withdrawalStrategy]+'.');
       step('Contribution allocation: '+(result.config.assumptions.optimizeContributions?'optimize eligible contributions with an RRSP marginal-rate floor of '+result.config.assumptions.rrspMinMarginalRate+'%.':'use the configured account contributions.'));
       result.config.accounts.forEach((a,k)=>{if(a.flexible!==snapshot.accounts[k]?.flexible&&a.flexible)step(a.name+': include its contribution budget in RRSP / TFSA allocation.');});
       result.config.realEstate.forEach((p,k)=>{const old=snapshot.realEstate[k];if(p.saleYear!==old.saleYear||p.ccaEnabled!==old.ccaEnabled)step(p.name+': '+(p.saleYear?'sell in '+p.saleYear:'keep through the plan')+'; '+(p.ccaEnabled?'claim future CCA':'stop future CCA claims')+'.');});
       $('action-explanation').textContent='Tested '+result.evaluated+' combined plans using pension timing, withdrawal orders and contribution allocation'+(result.sellRentals?', plus rental sale years and CCA':'')+'. Promising choices are revisited together and finalists are recalculated at full precision. This bounded search may miss a better combination. Already-started benefits stay fixed. Applying keeps your spending goal and contribution budgets; the displayed capacity is an estimate under your assumptions.';
-      if(result.improved){proposal=result.config;$('apply-action').textContent='Apply and save optimized plan';withdrawals(result.result);}
+      if(spending){step('Set your after-tax spending goal to '+money(result.monthlySpend)+'/month (was '+money(snapshot.assumptions.desiredMonthlyIncome)+').');$('action-explanation').textContent=$('action-explanation').textContent.replace('Applying keeps your spending goal and contribution budgets;','Applying saves the recommended spending goal and keeps your contribution budgets;');if(snapshot.assumptions.spendingMode==='categories')step('Spending categories are scaled proportionally to the recommended monthly amount.');}
+      if(result.improved||spending&&result.monthlySpend>0&&key(result.config)!==key(snapshot)){proposal=result.config;$('apply-action').textContent='Apply and save optimized plan';withdrawals(result.result);}
     }else if(kind==='status'){
       const {baseline,stressed,monteCarlo:mc}=result;
       $('action-result-title').textContent='Your current plan: the results';
@@ -123,8 +144,8 @@
     }catch(error){cancel();$('action-status').textContent='Could not start the calculation: '+error.message;}
   }
   buttons.forEach(b=>b.onclick=()=>start(b.dataset.action));
-  $('run-master').onclick=()=>{const goal=$('master-goal').value;orderComparison?.invalidate();$('withdrawal-options').open=false;start(goal,['spending','estate','tax'].includes(goal));};
-  ['master-goal','master-sell-rentals'].forEach(id=>$(id).onchange=()=>{cancel();$('action-results').hidden=true;$('action-status').textContent='Goal or options changed. Optimize again to update the recommendation.';});
+  $('run-master').onclick=()=>{const goal=$('master-goal').value;orderComparison?.invalidate();$('withdrawal-options').open=false;start(goal,['spending','estate','tax','retirement-spending'].includes(goal));};
+  ['master-goal','master-sell-rentals'].forEach(id=>$(id).onchange=()=>{cancel();$('action-results').hidden=true;$('retirement-spending-help').hidden=$('master-goal').value!=='retirement-spending';$('action-status').textContent='Goal or options changed. Optimize again to update the recommendation.';});
   $('cancel-action').onclick=()=>{cancel();$('action-status').textContent='Calculation cancelled. Your saved plan is unchanged.';};
   ['retirement-gap','retirement-fixed','retirement-sell-rentals'].forEach(id=>$(id).onchange=()=>{cancel();$('action-results').hidden=true;describeRetirement();$('action-status').textContent='Search preferences updated. Choose Find earliest retirement to run again.';});
   $('apply-action').onclick=async()=>{
