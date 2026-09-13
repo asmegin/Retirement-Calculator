@@ -11,7 +11,7 @@
         result=data.task==='rental'?RetireEngine.compareRentalSales(config,options):RetireEngine.compareWithdrawalOrders(config,options);
       }else if(kind==='retirement'){
         result=RetireEngine.solveRetirementAges(config,{fixedPerson:data.fixedPerson,maxYearGap:data.maxYearGap,preferClose:data.preferClose,sellRentals:data.sellRentals,onProgress:(tested,total)=>root.postMessage({id,tested,total})});
-      }else if(kind==='optimization')result=RetireEngine.optimizeWithdrawals(config,{objective:data.objective,onProgress:progress});
+      }else if(kind==='optimization')result=data.combined?root.optimizeRetirementPlan(config,{objective:data.objective,sellRentals:data.sellRentals,onProgress:progress}):RetireEngine.optimizeWithdrawals(config,{objective:data.objective,onProgress:progress});
       else throw new Error('Unknown calculation task.');
       root.postMessage({id,result});
     }catch(error){root.postMessage({id,error:error.message,fix:error.fix});}

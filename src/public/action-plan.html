@@ -23,6 +23,7 @@ table{border-collapse:collapse;text-align:left;width:100%}td,th{padding:12px;bor
 <main>
 <p id="action-context" class="action-context">Loading your saved plan…</p>
 <section class="card"><h2>What matters most?</h2><div class="master-plan"><label for="master-goal">Optimization goal<select id="master-goal"><option value="spending">Most monthly after-tax spending</option><option value="estate">Highest net worth at the end of my plan</option><option value="tax">Lowest lifetime tax while preserving my plan</option><option value="retirement">Earliest funded retirement</option><option value="status">Check risk and funding only</option></select></label><button class="btn" id="run-master" disabled>Optimize my plan</button></div><p class="inline-help">The result uses your saved retirement ages, planning horizon, accounts, pensions and properties. You review every proposed change before it is saved.</p></section>
+<label><input type="checkbox" id="master-sell-rentals"> Include rental sale timing and future CCA in optimization</label>
 <details class="advanced-actions"><summary>Choose a specific check instead</summary>
 <div class="action-choices">
 <section class="card action-choice"><h2>Understand where you stand</h2><p>Check whether your spending is funded, try a difficult first decade, and test many possible market outcomes with Monte Carlo.</p><button class="btn" data-action="status" disabled>Check current status</button></section>

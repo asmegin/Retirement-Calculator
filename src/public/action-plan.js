@@ -43,7 +43,19 @@
   function show(kind,result,snapshot){
     $('action-results').hidden=false;$('action-metrics').replaceChildren();$('action-steps').replaceChildren();$('action-schedule').hidden=true;
     $('action-status').textContent='Check complete. Review the result below.';
-    if(kind==='status'){
+    if(result.config&&result.objective){
+      const spending=result.objective==='spending',estate=result.objective==='estate';
+      $('action-result-title').textContent=spending?'Your plan for more monthly spending':estate?'Your plan for higher ending net worth':'Your plan for lower lifetime tax';
+      $('action-summary').textContent=result.improved?'A combined plan improved your selected goal. Review the changes below.':'No improvement was found among the combined plans tested.';
+      metric(spending?'Monthly after-tax spending capacity':estate?'Ending net worth':'Lifetime tax',money(spending?result.monthlySpend:estate?result.result.finalNetWorthReal:result.result.lifetimeTax+result.result.lifetimeCorporateTax),spending?'Current capacity '+money(result.baselineSpend)+'/month; today’s dollars':'At your current spending goal');
+      people(result.config).forEach((p,k)=>{for(const field of ['cppStartAge','oasStartAge'])if(p[field]!==snapshot.incomes[k][field])step(p.name+': '+(field==='cppStartAge'?'CPP / QPP':'OAS')+' starts at age '+p[field]+' (was '+snapshot.incomes[k][field]+').');});
+      step('Withdrawal order: '+PlanComparison.names[result.config.assumptions.withdrawalStrategy]+'.');
+      step('Contribution allocation: '+(result.config.assumptions.optimizeContributions?'optimize eligible contributions with an RRSP marginal-rate floor of '+result.config.assumptions.rrspMinMarginalRate+'%.':'use the configured account contributions.'));
+      result.config.accounts.forEach((a,k)=>{if(a.flexible!==snapshot.accounts[k]?.flexible&&a.flexible)step(a.name+': include its contribution budget in RRSP / TFSA allocation.');});
+      result.config.realEstate.forEach((p,k)=>{const old=snapshot.realEstate[k];if(p.saleYear!==old.saleYear||p.ccaEnabled!==old.ccaEnabled)step(p.name+': '+(p.saleYear?'sell in '+p.saleYear:'keep through the plan')+'; '+(p.ccaEnabled?'claim future CCA':'stop future CCA claims')+'.');});
+      $('action-explanation').textContent='Tested '+result.evaluated+' combined plans using pension timing, withdrawal orders and contribution allocation'+(result.sellRentals?', plus rental sale years and CCA':'')+'. Promising choices are revisited together and finalists are recalculated at full precision. This bounded search may miss a better combination. Already-started benefits stay fixed. Applying keeps your spending goal and contribution budgets; the displayed capacity is an estimate under your assumptions.';
+      if(result.improved){proposal=result.config;$('apply-action').textContent='Apply and save optimized plan';withdrawals(result.result);}
+    }else if(kind==='status'){
       const {baseline,stressed,monteCarlo:mc}=result;
       $('action-result-title').textContent='Your current plan: the results';
       $('action-summary').textContent=fundingText(baseline)+' In the market simulations, '+Math.round(mc.successRate*mc.runs)+' of '+mc.runs+' paths funded the full plan.';
@@ -92,7 +104,7 @@
     reveal();
   }
   function reveal(){$('apply-action').hidden=!proposal;$('action-result-title').focus({preventScroll:true});$('action-results').scrollIntoView({behavior:'smooth',block:'start'});}
-  function start(kind){
+  function start(kind,combined=false){
     if(!config||applying)return;
     cancel();const id=generation,snapshot=structuredClone(config);source=key(snapshot);busy(true);$('action-results').hidden=true;
     $('action-status').textContent=kind==='status'?'Checking spending and difficult markets, then running Monte Carlo…':kind==='retirement'?'Searching for funded retirement dates…':'Comparing withdrawal paths across your plan…';
@@ -103,15 +115,16 @@
       worker.onmessage=({data})=>{
         if(id!==generation||data.id!==id||!worker)return;
         if(data.error){fail(data.error);return;}
-        if(!data.result){$('action-status').textContent=data.progress?.fraction!=null?'Testing market outcomes: '+Math.round(data.progress.fraction*100)+'% complete.':data.progress?'Compared '+data.progress.evaluated+' withdrawal paths…':'Checked '+data.tested+' of '+data.total+' retirement combinations…';return;}
+        if(!data.result){$('action-status').textContent=data.progress?.phase?data.progress.phase+': '+data.progress.evaluated+' combined plans checked.':data.progress?.fraction!=null?'Testing market outcomes: '+Math.round(data.progress.fraction*100)+'% complete.':data.progress?'Compared '+data.progress.evaluated+' withdrawal paths…':'Checked '+data.tested+' of '+data.total+' retirement combinations…';return;}
         worker.terminate();worker=null;busy(false);try{show(kind,data.result,snapshot);}catch(error){fail(error.message);}
       };
       const searchConfig=structuredClone(snapshot);if(kind==='retirement')delete searchConfig.assumptions.withdrawalPlan;
-      worker.postMessage({id,config:searchConfig,objective:kind,sellRentals:$('retirement-sell-rentals').checked,maxYearGap:$('retirement-gap').value===''?null:+$('retirement-gap').value,preferClose:true,fixedPerson:$('retirement-fixed').value===''?null:+$('retirement-fixed').value});
+      worker.postMessage({id,config:searchConfig,objective:kind,combined,sellRentals:combined?$('master-sell-rentals').checked:$('retirement-sell-rentals').checked,maxYearGap:$('retirement-gap').value===''?null:+$('retirement-gap').value,preferClose:true,fixedPerson:$('retirement-fixed').value===''?null:+$('retirement-fixed').value});
     }catch(error){cancel();$('action-status').textContent='Could not start the calculation: '+error.message;}
   }
   buttons.forEach(b=>b.onclick=()=>start(b.dataset.action));
-  $('run-master').onclick=()=>{const goal=$('master-goal').value;if(goal==='spending'){$('withdrawal-options').open=true;orderComparison.run();}else start(goal);};
+  $('run-master').onclick=()=>{const goal=$('master-goal').value;orderComparison?.invalidate();$('withdrawal-options').open=false;start(goal,['spending','estate','tax'].includes(goal));};
+  ['master-goal','master-sell-rentals'].forEach(id=>$(id).onchange=()=>{cancel();$('action-results').hidden=true;$('action-status').textContent='Goal or options changed. Optimize again to update the recommendation.';});
   $('cancel-action').onclick=()=>{cancel();$('action-status').textContent='Calculation cancelled. Your saved plan is unchanged.';};
   ['retirement-gap','retirement-fixed','retirement-sell-rentals'].forEach(id=>$(id).onchange=()=>{cancel();$('action-results').hidden=true;describeRetirement();$('action-status').textContent='Search preferences updated. Choose Find earliest retirement to run again.';});
   $('apply-action').onclick=async()=>{
