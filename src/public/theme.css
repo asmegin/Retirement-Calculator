@@ -80,3 +80,12 @@ body[data-page=overview]>.dashboard-controls{display:none}body[data-page=overvie
 .demo-badge{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;padding:.8rem;border:2px solid var(--accent);border-radius:8px;margin:1rem 0}
 
 .demo-badge[hidden]{display:none!important}
+/* Checkboxes default to roughly 13px, which is below the 24px minimum target
+   size and awkward on touch. Size them explicitly, and grow them on the narrow
+   layout where the pointer is a finger. Inline checkboxes that sit inside a
+   sentence keep their own narrower rules. */
+.input-group.check input[type=checkbox],.form-field input[type=checkbox],.setting-record input[type=checkbox]{width:18px;height:18px;flex:0 0 auto}
+@media(max-width:760px){
+  .input-group.check input[type=checkbox],.form-field input[type=checkbox],.setting-record input[type=checkbox]{width:24px;height:24px}
+  .input-group.check label,.form-field label{min-height:24px;display:flex;align-items:center}
+}

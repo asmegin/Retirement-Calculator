@@ -175,3 +175,35 @@ test('close retirement searches compare calendar years, respect fixed dates and 
   assert.equal(E.solveRetirementAges(c,opts).found,false);
   c.assumptions.householdType='single';assert.equal(E.solveRetirementAges(c,opts).found,true);
 });
+test('OAS recovery tax is deducted before income tax, so fully repaid OAS is tax neutral',()=>{
+  /* CRA lines 23400 -> 23500 -> 23600: the recovery tax is assessed on net income
+     before the repayment, then deducted in arriving at net and taxable income. */
+  const claw=E.personTax(160000,70,0,8732,1,'ON');
+  close(claw.clawback,8732);
+  /* 160,000 of income including 8,732 of fully repaid OAS must cost the same
+     income tax as 151,268 of income with no OAS at all. */
+  close(claw.income,E.personTax(160000-8732,70,0,0,1,'ON').income);
+  /* Partial clawback: 15% of the excess over the threshold, deducted before tax. */
+  const partial=E.personTax(120000,70,0,8732,1,'ON');
+  close(partial.clawback,.15*(120000-E.OAS_CLAWBACK_THRESHOLD));
+  close(partial.income,E.personTax(120000-partial.clawback,70,0,0,1,'ON').income);
+  close(partial.total,partial.income+partial.clawback);
+  /* Below the threshold nothing changes. */
+  close(E.personTax(90000,70,0,8732,1,'ON').clawback,0);
+  close(E.personTax(90000,70,0,8732,1,'ON').income,E.personTax(90000,70,0,0,1,'ON').income);
+});
+test('Ontario health premium follows the statutory steps across every tier',()=>{
+  /* Premium is the provincial tax less the same return with the premium removed,
+     so compare tier boundaries against the published schedule. */
+  const premium=income=>{
+    const gross=(()=>{let prev=0,g=0;for(const[cap,rate]of E.ONT.brackets){g+=Math.max(0,Math.min(income,cap)-prev)*rate;prev=cap;if(cap>=income)break;}return g;})();
+    const basic=Math.max(0,gross-E.ONT.bpa*.0505);
+    const reduced=Math.max(0,basic-Math.max(0,2*294-basic));
+    return E.personTax(income,60,0,0,1,'ON').provincial-(reduced+.2*Math.max(0,reduced-5710)+.36*Math.max(0,reduced-7307));
+  };
+  [[19000,0],[20000,0],[22500,150],[25000,300],[30000,300],[36000,300],[37250,375],[38500,450],
+   [45000,450],[48000,450],[48300,525],[48600,600],[60000,600],[72000,600],[72300,675],[72600,750],
+   [150000,750],[200000,750],[200300,825],[200600,900],[210000,900]].forEach(([income,expected])=>{
+    close(premium(income),expected,.02);
+  });
+});

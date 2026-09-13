@@ -94,9 +94,12 @@ def check_comparisons(page,base):
         assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')==proposed
         page.evaluate('c=>AppStorage.save(c)',multi_saved)
     page.goto(base+'/withdrawals.html?compare=1');tool=page.locator('[data-comparison=withdrawals]');tool.locator('.comparison-spending-table tbody tr').first.wait_for(timeout=60000)
-    assert tool.locator('.comparison-spending-table tbody tr').count()==6
+    # Current settings carry no saved annual schedule, so they are the TFSA-first
+    # row itself and it is not listed a second time: 1 baseline + 4 alternatives.
+    assert tool.locator('.comparison-spending-table tbody tr').count()==5
+    assert tool.locator('.comparison-spending-table tbody tr',has_text='TFSA first').count()==0
     assert 'Most monthly spending' in tool.inner_text()
-    tool.locator('.comparison-spending-table tbody tr').nth(2).get_by_role('button',name='Review',exact=True).click()
+    tool.locator('.comparison-spending-table tbody tr',has_text='RRSP first').get_by_role('button',name='Review',exact=True).click()
     tool.get_by_role('button',name='Use this withdrawal order',exact=True).click()
     assert page.evaluate('config.assumptions.withdrawalStrategy')=='rrsp-first'
     assert page.evaluate('async()=>await (await AppStorage.fetch("/api/config")).json()')==multi_saved

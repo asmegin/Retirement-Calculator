@@ -119,7 +119,7 @@ const schema = {
 const assumptionFields = [
   {key:'householdType',label:'Household',type:'select',options:['single','couple']},
   {key:'province',label:'Province / territory',type:'select',options:Object.keys(E.PROVINCES)},
-  {key:'desiredMonthlyIncome', label:'After-tax spending $/mo', type:'number', hint:"Today's dollars. The engine grosses up withdrawals to hit this after tax."},
+  {key:'desiredMonthlyIncome', label:'After-tax spending $/mo', type:'number', hint:"Today’s dollars. The engine grosses up withdrawals to hit this after tax."},
   {key:'inflation', label:'Inflation %/yr', type:'number', step:'0.1'},
   {key:'rentalIncomeInflation', label:'Rent growth %/yr', type:'number', step:'0.1'},
   {key:'vacancyRate', label:'Vacancy and credit loss %', type:'number', step:'0.5'},

@@ -142,7 +142,11 @@ try:
             page.wait_for_selector('#action-results:not([hidden])',timeout=60000)
             assert page.locator('#action-result-title').inner_text()=='Your plan for more monthly spending'
             assert not page.locator('#withdrawal-options').evaluate('(el)=>el.open')
-            assert page.locator('#action-metrics > div').count()==1
+            # Headline capacity plus the tax, net worth and benefit side effects.
+            assert page.locator('#action-metrics > div').count()==4
+            metric_labels=page.locator('#action-metrics > div > span').all_inner_texts()
+            assert 'Lifetime benefits change' in metric_labels
+            assert 'Final net worth change' in metric_labels
             assert page.locator('#master-sell-rentals').is_visible()
             capacity=page.evaluate('optimizerResult.monthlySpend')
             page.locator('#apply-action').click()
@@ -155,7 +159,10 @@ try:
             page.evaluate('async()=>{const c=structuredClone(PlanState.get());c.incomes.forEach((p,k)=>{p.birthYear=new Date().getFullYear()-65+k;p.targetRetireAge=65;});c.assumptions.targetDeathAge=65;await AppStorage.save(c);}')
             page.locator('#master-goal').select_option('retirement-spending');page.locator('#run-master').click()
             page.wait_for_selector('#retirement-spending-options:not([hidden])',timeout=60000)
-            assert page.locator('#retirement-spending-options tbody tr').count()==4
+            # Both people are already 65 with a lifespan of 65, so the sweep offers the
+            # one actionable retirement year rather than listing ages now in the past.
+            assert page.locator('#retirement-spending-options tbody tr').count()==1
+            assert 'in the past' not in page.locator('#retirement-spending-options').inner_text()
             page.locator('#retirement-spending-options button').first.click()
             page.locator('#apply-action').click()
             page.wait_for_function('document.getElementById("action-status").textContent.startsWith("Changes applied")')
