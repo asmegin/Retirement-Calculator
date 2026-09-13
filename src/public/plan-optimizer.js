@@ -69,7 +69,7 @@
       phase='RRSP / TFSA contribution allocation';
       choices([false,true],(c,v)=>{c.accounts.forEach(a=>{if(['RRSP','TFSA'].includes(a.type)&&!a.solveToTarget)a.flexible=v;});c.assumptions.optimizeContributions=true;});
       choices([false,true],(c,v)=>c.assumptions.optimizeContributions=v);
-      choices([0,20,30,35,40,99],(c,v)=>{c.assumptions.optimizeContributions=true;c.assumptions.rrspMinMarginalRate=v;});
+      choices([30,35,40,99],(c,v)=>{c.assumptions.optimizeContributions=true;c.assumptions.rrspMinMarginalRate=v;});
       if(options.sellRentals){
         phase='Rental sale years and future CCA';
         rentals.forEach(({p,index})=>{

@@ -37,6 +37,15 @@ test('RRSP goal completion scales actual deposits, deductions and refunds while 
   c.accounts.push({...c.accounts[0],name:'Second RRSP goal'});near(simulate(c).years[0].person[0].deductible,partial.person[0].deductible);
   c.assumptions.rrspGoalCompletion=0;near(simulate(c).years[0].person[0].deductible,0);
 });
+test('automatic RRSP goal cannot exhaust income and old zero-percent floors are upgraded',()=>{
+  const c=fixture();Object.assign(c.incomes[0],{birthYear:1980,salary:130000,rrspRoomOpening:200000,targetRetireAge:65});
+  Object.assign(c.assumptions,{optimizeContributions:true,rrspMinMarginalRate:0,rrspGoalCompletion:100,targetDeathAge:66});
+  c.accounts=[{name:'RRSP goal',owner:'P0',type:'RRSP',balance:0,growthRate:0,solveToTarget:true}];
+  const normalized=E.normalizeConfig(c),year=simulate(c).years[0];
+  assert.equal(normalized.assumptions.rrspMinMarginalRate,30);
+  assert.ok(year.rrspTarget[0]>=10000&&year.rrspTarget[0]<=40000,year.rrspTarget[0]);
+  assert.ok(year.marginalRates[0]>=.30,year.marginalRates[0]);
+});
 test('CSV rejects overlapping annual and monthly data and invalid ceilings',()=>{
   assert.throws(()=>P.parseEarningsCSV('year,month,earnings\n2020,,12000\n2020,1,1000'),/overlapping/);
   assert.throws(()=>P.parseEarningsCSV('year,earnings,ympe\n2020,12000,-1'),/Invalid/);
