@@ -48,8 +48,8 @@
     if(result.objective==='retirement-spending'){
       $('action-result-title').textContent='Retirement age and monthly spending';
       $('action-summary').textContent='Choose the balance of earlier retirement and higher monthly spending that suits you.';
-      if(!result.rows.some(row=>!row.unavailable))$('action-summary').textContent='No future retirement options fall between age 50 and your configured planning lifespan. Review your household ages and lifespan settings.';
-      $('action-explanation').textContent='Ages are paired in the same calendar year, starting at the first person’s age 50. Each available option runs the combined spending optimizer. Amounts are after tax in today’s dollars, through your saved planning lifespan. Later retirement leaves fewer spending years. Applying saves both retirement ages, the monthly spending goal and the optimized settings. A bounded search may miss a better combination.';
+      if(!result.rows.some(row=>!row.unavailable))$('action-summary').textContent='No future retirement options fall between the first person’s next birthday milestone and age 75. Review your household ages and lifespan settings.';
+      $('action-explanation').textContent='Ages are paired in the same calendar year, stepping in five-year intervals from the first person’s next milestone age up to 75. Each available option runs the combined spending optimizer. Amounts are after tax in today’s dollars, through your saved planning lifespan. Later retirement leaves fewer spending years. Applying saves both retirement ages, the monthly spending goal and the optimized settings. A bounded search may miss a better combination.';
       const table=document.createElement('table'),head=document.createElement('thead'),header=document.createElement('tr'),body=document.createElement('tbody');
       ['Retirement ages','Year','Monthly after-tax spending','Choose'].forEach(label=>{const th=document.createElement('th');th.scope='col';th.textContent=label;header.append(th);});head.append(header);
       result.rows.forEach(row=>{
@@ -68,11 +68,22 @@
       if(spending&&!result.improved)$('action-summary').textContent='Your current settings already support the displayed spending capacity. Apply it to save that amount as your spending goal.';
       metric(spending?'Monthly after-tax spending capacity':estate?'Ending net worth':'Lifetime tax',money(spending?result.monthlySpend:estate?result.result.finalNetWorthReal:result.result.lifetimeTax+result.result.lifetimeCorporateTax),spending?'Current capacity '+money(result.baselineSpend)+'/month; today’s dollars':'At your current spending goal');
       if(spending&&result.monthlySpend>=39999)step('This result reaches the $40,000/month search ceiling. The model may support more; the optimizer does not compare spending above that limit.');
+      /* One goal is optimized, but the others move too. Show all three so a plan
+         that reaches its goal by giving up benefits or estate value is visible. */
+      if(result.reference){
+        comparisonMetric('Lifetime tax change',result.reference.lifetimeTax+result.reference.lifetimeCorporateTax,
+          result.result.lifetimeTax+result.result.lifetimeCorporateTax,true,
+          spending?'Both measured at each plan’s own spending capacity; future dollars.':'Personal and corporate tax; future dollars.');
+        comparisonMetric('Final net worth change',result.reference.finalNetWorthReal,result.result.finalNetWorthReal,false,
+          spending?'Both measured at each plan’s own spending capacity; today’s dollars.':'In today’s dollars.');
+        comparisonMetric('Lifetime benefits change',result.reference.lifetimeBenefits,result.result.lifetimeBenefits,false,'GIS and supplements; future dollars.');
+      }
       people(result.config).forEach((p,k)=>{for(const field of ['cppStartAge','oasStartAge'])if(p[field]!==snapshot.incomes[k][field])step(p.name+': '+(field==='cppStartAge'?'CPP / QPP':'OAS')+' starts at age '+p[field]+' (was '+snapshot.incomes[k][field]+').');});
       step('Withdrawal order: '+PlanComparison.names[result.config.assumptions.withdrawalStrategy]+'.');
       step('Contribution allocation: '+(result.config.assumptions.optimizeContributions?'optimize eligible contributions with an RRSP marginal-rate floor of '+result.config.assumptions.rrspMinMarginalRate+'%.':'use the configured account contributions.'));
       result.config.accounts.forEach((a,k)=>{if(a.flexible!==snapshot.accounts[k]?.flexible&&a.flexible)step(a.name+': include its contribution budget in RRSP / TFSA allocation.');});
       result.config.realEstate.forEach((p,k)=>{const old=snapshot.realEstate[k];if(p.saleYear!==old.saleYear||p.ccaEnabled!==old.ccaEnabled)step(p.name+': '+(p.saleYear?'sell in '+p.saleYear:'keep through the plan')+'; '+(p.ccaEnabled?'claim future CCA':'stop future CCA claims')+'.');});
+      if(result.budgetReached)step('The search used its whole evaluation budget, so some combinations were not tried. Running it again from this saved plan may find more.');
       $('action-explanation').textContent='Tested '+result.evaluated+' combined plans using pension timing, withdrawal orders and contribution allocation'+(result.sellRentals?', plus rental sale years and CCA':'')+'. Promising choices are revisited together and finalists are recalculated at full precision. This bounded search may miss a better combination. Already-started benefits stay fixed. Applying keeps your spending goal and contribution budgets; the displayed capacity is an estimate under your assumptions.';
       if(spending){step('Set your after-tax spending goal to '+money(result.monthlySpend)+'/month (was '+money(snapshot.assumptions.desiredMonthlyIncome)+').');$('action-explanation').textContent=$('action-explanation').textContent.replace('Applying keeps your spending goal and contribution budgets;','Applying saves the recommended spending goal and keeps your contribution budgets;');if(snapshot.assumptions.spendingMode==='categories')step('Spending categories are scaled proportionally to the recommended monthly amount.');}
       if(result.improved||spending&&result.monthlySpend>0&&key(result.config)!==key(snapshot)){proposal=result.config;$('apply-action').textContent='Apply and save optimized plan';withdrawals(result.result);}

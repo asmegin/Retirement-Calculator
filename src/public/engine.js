@@ -24,7 +24,9 @@
   };
   var ONT = {
     brackets: [[52886, 0.0505], [105775, 0.0915], [150000, 0.1116], [220000, 0.1216], [Infinity, 0.1316]],
-    bpa: 12747, ageAmt: 6142, ageThresh: 46006, pensionAmt: 1641, creditRate: 0.0505,
+    /* ageAmt/ageThresh/pensionAmt are set on the PROVINCES.ON entry below,
+       which extends this same object; do not add them here as well. */
+    bpa: 12747, creditRate: 0.0505,
     surtax1: 5710, surtax2: 7307
   };
   /* 2025 annual schedules; future years use the plan's inflation assumption.
@@ -417,6 +419,16 @@
     idx = num(idx, 1); province = province || 'ON'; details = details || {};
     var provincial = PROVINCES[province] || ONT;
     taxable = Math.max(0, taxable);
+    /* The OAS recovery tax is assessed on net income before the repayment
+       (line 23400), then deducted on line 23500 in arriving at net income
+       (line 23600) and taxable income. Income tax, the age amount reduction,
+       the federal BPA phase-out and the Ontario health premium therefore all
+       apply to income net of the repayment, not to the pre-repayment figure. */
+    var clawback = Math.min(
+      Math.max(0, oasReceived),
+      OAS_CLAWBACK_RATE * Math.max(0, taxable - OAS_CLAWBACK_THRESHOLD * idx)
+    );
+    taxable = Math.max(0, taxable - clawback);
     function jurisdiction(J, withSurtax) {
       var gross = bracketTax(taxable, J.brackets, idx);
       var credits = J.bpa * idx;
@@ -448,7 +460,7 @@
         var h = taxable <= 20000 ? 0 : taxable <= 36000 ? Math.min(300,.06*(taxable-20000))
           : taxable <= 48000 ? 300+Math.min(150,.06*(taxable-36000))
           : taxable <= 72000 ? 450+Math.min(150,.25*(taxable-48000))
-          : taxable <= 200600 ? 600+Math.min(150,.25*(taxable-72000)) : 750+Math.min(150,.25*(taxable-200600));
+          : taxable <= 200000 ? 600+Math.min(150,.25*(taxable-72000)) : 750+Math.min(150,.25*(taxable-200000));
         net += h;
       }
       return net;
@@ -456,10 +468,6 @@
     var fed = jurisdiction(FED, false);
     if (province === 'QC') fed *= .835;
     var ont = jurisdiction(provincial, province === 'ON');
-    var clawback = Math.min(
-      Math.max(0, oasReceived),
-      OAS_CLAWBACK_RATE * Math.max(0, taxable - OAS_CLAWBACK_THRESHOLD * idx)
-    );
     return { federal:fed, provincial:ont, income: fed + ont, clawback: clawback, total: fed + ont + clawback,
       federalAgeAmount:age >= 65 ? Math.max(0,FED.ageAmt*idx-.15*Math.max(0,taxable-FED.ageThresh*idx)) : 0,
       provincialAgeAmount:age >= 65 ? Math.max(0,provincial.ageAmt*idx-(province === 'QC' ? .1875 : .15)*Math.max(0,(province === 'QC' ? num(details.familyIncome,taxable) : taxable)-provincial.ageThresh*idx)) : 0 };
@@ -1632,9 +1640,15 @@
   function compareWithdrawalOrders(cfg,opts){
     opts=opts||{};cfg=normalizeConfig(cfg);
     var baseline=simulate(cfg,{startYear:opts.startYear});
-    var rows=[{label:'Current settings',strategy:cfg.assumptions.withdrawalStrategy,plan:cfg.assumptions.withdrawalPlan||null,config:clone(cfg)}];
-    Object.keys(WITHDRAWAL_ORDERS).forEach(function(strategy){var c=clone(cfg);delete c.assumptions.withdrawalPlan;c.assumptions.withdrawalStrategy=strategy;rows.push({label:strategy,strategy:strategy,plan:null,config:c});});
-    rows.forEach(function(row,i){var r=i===0?baseline:simulate(row.config,{startYear:opts.startYear});row.tax=totalTax(r);row.estate=r.finalNetWorthReal;row.funded=isFunded(r);row.shortfallYear=(r.years.find(function(y){return y.unfunded>1;})||{}).year||null;row.monthlySpend=maxSustainableSpend(row.config,{startYear:opts.startYear});delete row.config;if(opts.onProgress)opts.onProgress({evaluated:i+1,maxEvaluations:rows.length});});
+    var currentPlan=cfg.assumptions.withdrawalPlan||null;
+    var rows=[{label:'Current settings',strategy:cfg.assumptions.withdrawalStrategy,plan:currentPlan,config:clone(cfg)}];
+    /* Without a saved annual schedule the current settings are exactly the row for
+       the strategy they already use, so listing it again would duplicate a row and
+       repeat its spending solve, which is the expensive part of this comparison. */
+    Object.keys(WITHDRAWAL_ORDERS).forEach(function(strategy){
+      if(!currentPlan&&strategy===cfg.assumptions.withdrawalStrategy)return;
+      var c=clone(cfg);delete c.assumptions.withdrawalPlan;c.assumptions.withdrawalStrategy=strategy;rows.push({label:strategy,strategy:strategy,plan:null,config:c});});
+    rows.forEach(function(row,i){var r=i===0?baseline:simulate(row.config,{startYear:opts.startYear});row.tax=totalTax(r);row.estate=r.finalNetWorthReal;row.funded=isFunded(r);row.shortfallYear=(r.years.find(function(y){return y.unfunded>1;})||{}).year||null;row.monthlySpend=maxSustainableSpend(row.config,{startYear:opts.startYear});row.spendingAtLimit=row.monthlySpend>=39999;delete row.config;if(opts.onProgress)opts.onProgress({evaluated:i+1,maxEvaluations:rows.length});});
     var viable=rows.filter(function(r){return r.funded;});
     return {rows:rows,bestTax:viable.reduce(function(a,b){return !a||b.tax<a.tax?b:a;},null),bestEstate:viable.reduce(function(a,b){return !a||b.estate>a.estate?b:a;},null),bestSpending:rows.reduce(function(a,b){return b.monthlySpend>a.monthlySpend?b:a;},rows[0])};
   }
@@ -1974,7 +1988,7 @@
   function monteCarloRun(cfg, runs, seed, onProgress, done) {
     runs = runs || 500;
     var plan = simulate(cfg, { fastSolve: true }).contributionPlan;
-    var results = [], run = 0, byYear = {};
+    var results = [], run = 0, byYear = {}, deflators = {};
     function chunk() {
       var stop = Math.min(run + 25, runs);
       for (; run < stop; run++) {
@@ -1982,8 +1996,12 @@
           returnMode: 'monte-carlo', rand: mulberry32(seed + run * 7919),
           fastSolve: true, contributionPlan: plan
         });
-        results.push({ depletedYear: res.depletedYear, funded:isFunded(res), finalNetWorth: res.finalNetWorth, lifetimeTax: res.lifetimeTax });
-        res.years.forEach(function (r) { (byYear[r.year] = byYear[r.year] || []).push(r.portfolio); });
+        results.push({ depletedYear: res.depletedYear, funded:isFunded(res), finalNetWorth: res.finalNetWorth,
+          finalNetWorthReal: res.finalNetWorthReal, lifetimeTax: res.lifetimeTax });
+        /* Portfolio values are nominal. The deflator depends only on the inflation
+           assumption, not on the sampled returns, so it is identical across runs and
+           callers can deflate the percentile bands to today's dollars. */
+        res.years.forEach(function (r) { (byYear[r.year] = byYear[r.year] || []).push(r.portfolio); deflators[r.year] = r.deflator; });
       }
       if (onProgress) onProgress(run / runs);
       if (run < runs) setTimeout(chunk, 0);
@@ -1992,7 +2010,8 @@
         var bands = Object.keys(byYear).map(function (yr) {
           var arr = byYear[yr].sort(function (a, b) { return a - b; });
           function pct(p) { return arr[Math.min(arr.length - 1, Math.floor(p * arr.length))]; }
-          return { year: parseInt(yr, 10), p10: pct(0.10), p25: pct(0.25), p50: pct(0.50), p75: pct(0.75), p90: pct(0.90) };
+          return { year: parseInt(yr, 10), deflator: deflators[yr],
+            p10: pct(0.10), p25: pct(0.25), p50: pct(0.50), p75: pct(0.75), p90: pct(0.90) };
         }).sort(function (a, b) { return a.year - b.year; });
         done({ runs: runs, successRate: successes / runs, bands: bands, results: results });
       }

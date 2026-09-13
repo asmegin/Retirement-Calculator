@@ -95,7 +95,7 @@
 <div class="header">
   <h1>Your retirement</h1>
   <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
-    <span class="toggle"><input type="checkbox" id="real-toggle" checked><label for="real-toggle" style="cursor:pointer">Today's dollars</label></span>
+    <span class="toggle"><input type="checkbox" id="real-toggle" checked><label for="real-toggle" style="cursor:pointer">Today’s dollars</label></span>
     <button class="btn ghost" onclick="exportCsv()">Export ledger</button>
     <button class="btn ghost" onclick="window.print()">Print</button>
     <button class="btn ghost" onclick="openSetupWizard()">Setup Wizard</button>
@@ -201,7 +201,7 @@
 <section class="panel" id="p-contrib" hidden>
   <div class="card" id="target-card" hidden></div>
   <div class="card">
-    <div class="note">Where each year's contribution budget goes. The optimizer moves flexible contributions to whichever RRSP has the highest marginal rate, stops once that rate falls below the floor you set, then fills TFSAs. Refunds are credited to the following year's budget.</div>
+    <div class="note">Where each year’s contribution budget goes. The optimizer moves flexible contributions to whichever RRSP has the highest marginal rate, stops once that rate falls below the floor you set, then fills TFSAs. Refunds are credited to the following year’s budget.</div>
     <div class="chart-container"><canvas id="chart-contrib"></canvas></div>
   </div>
   <div class="card" style="overflow-x:auto;max-height:60vh">
@@ -236,7 +236,7 @@
 
 <section class="panel" id="p-risk" hidden>
   <div class="card">
-    <div class="note">Monte Carlo re-runs the whole plan with random annual returns around each account's expected rate. Success means the spending goal was funded every year to the planning age.</div>
+    <div class="note">Monte Carlo re-runs the whole plan with random annual returns around each account’s expected rate. Success means the spending goal was funded every year to the planning age.</div>
     <div class="pick" style="margin-bottom:1rem">
       <label>Runs</label><select id="mc-runs"><option>250</option><option selected>500</option><option>1000</option></select>
       <label>Volatility %</label><input type="number" id="mc-vol" value="12" style="width:80px">

@@ -41,7 +41,7 @@ fillSelect(el('p1-oas'), 65, 70); fillSelect(el('p2-oas'), 65, 70);
 ['p1-cpp','p2-cpp','p1-oas','p2-oas','strategy','return-mode','rrsp-floor']
   .forEach(id => el(id).addEventListener('change', onStateChange));
 el('toggle-lines').addEventListener('change', () => charts.traj && charts.traj.update());
-el('real-toggle').addEventListener('change', () => run());
+el('real-toggle').addEventListener('change', () => { run(); if (lastMonteCarlo) renderMonteCarlo(lastMonteCarlo); });
 el('p1-slider').addEventListener('input', e => { el('p1-age-val').textContent = e.target.value; queueInputChange(); });
 el('p2-slider').addEventListener('input', e => { el('p2-age-val').textContent = e.target.value; queueInputChange(); });
 el('spend-slider').addEventListener('input', e => { el('m-goal').value = e.target.value; el('spend-val').textContent = fmt(e.target.value); queueInputChange(); });
@@ -201,11 +201,19 @@ function run() {
   const years = sim.years;
   const labels = years.map(r => r.year);
   const P = config.incomes;
-  const unit = real() ? " in today's dollars" : ' nominal';
+  const unit = real() ? " in today’s dollars" : ' nominal';
 
   /* banner */
   const banner = el('status-banner'), text = el('banner-text');
-  if (sim.depletedYear) {
+  if (!years.length) {
+    /* Nothing to project: the planning lifespan already ended. Say so, because
+       every metric below is zero and would otherwise read as a funded plan. */
+    banner.className = 'alert-banner danger';
+    text.textContent = `The planning lifespan (age ${config.assumptions.targetDeathAge}) ends before ${sim.startYear}, so there are no years to project. Raise the planning lifespan on Plan settings, or check the birth years on Household.`;
+    el('m-depleted').textContent = '—';
+    el('m-depleted').style.color = 'var(--danger)';
+    el('m-depleted-sub').textContent = 'no years to project';
+  } else if (sim.depletedYear) {
     const r = years.find(x => x.year === sim.depletedYear);
     banner.className = 'alert-banner danger';
     text.textContent = `Spending goal is not fully funded from ${sim.depletedYear} (${r.person.map((p,i)=>p.name+' '+r.ages[i]).join(', ')}).`;
@@ -233,11 +241,11 @@ function run() {
   el('m-tax').textContent = fmt(real() ? years.reduce((s,r)=>s+r.totalTax*r.deflator, 0) : sim.lifetimeTax);
   el('m-refund').textContent = fmt(real() ? years.reduce((s,r)=>s+r.refund*r.deflator, 0) : sim.lifetimeRefunds);
   el('m-nw').textContent = fmt(real() ? sim.finalNetWorthReal : sim.finalNetWorth);
-  el('m-nw-sub').textContent = real() ? "today's dollars" : sim.endYear + ' dollars';
+  el('m-nw-sub').textContent = real() ? "today’s dollars" : sim.endYear + ' dollars';
 
   const maxSpend = E.maxSustainableSpend(config);
   el('m-max').textContent = fmt(maxSpend) + '/mo';
-  el('m-max-sub').textContent = `to age ${config.assumptions.targetDeathAge}, today's dollars`;
+  el('m-max-sub').textContent = `to age ${config.assumptions.targetDeathAge}, today’s dollars`;
 
   /* trajectory */
   upsert('traj', 'chart-trajectory', {
@@ -346,7 +354,7 @@ function renderTargetCard(years) {
   const card = el('target-card');
   if (!rows.length) { card.hidden = true; return; }
   card.hidden = false;
-  card.innerHTML = `<div style="color:var(--muted);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.9rem">This year's RRSP target</div>
+  card.innerHTML = `<div style="color:var(--muted);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.9rem">This year’s RRSP target</div>
     <div style="display:flex;gap:2rem;flex-wrap:wrap">${rows.join('')}</div>
     <div style="font-size:.78rem;color:var(--muted);margin-top:1rem;border-top:1px solid var(--line);padding-top:.7rem">
       Every extra dollar of bonus raises the target by exactly one dollar, so a February top-up of "whatever I'm short, plus the bonus" lands on target. Projections assume you hit this each year.</div>`;
@@ -500,6 +508,31 @@ function exportCsv() {
 }
 
 /* ---------------------------------------------------------- monte carlo */
+/* Kept so the today's-dollars toggle can redraw the bands without re-running. */
+let lastMonteCarlo = null;
+
+function renderMonteCarlo(res) {
+  /* Bands and final values are nominal; follow the same today's-dollars
+     toggle as every other figure on this page. */
+  const band = (b, key) => real() ? b[key] * b.deflator : b[key];
+  const finals = res.results.map(r => real() ? r.finalNetWorthReal : r.finalNetWorth).sort((a,b)=>a-b);
+  el('mc-success').textContent = (res.successRate*100).toFixed(1) + '%';
+  el('mc-success').style.color = res.successRate >= .85 ? 'var(--green)' : res.successRate >= .7 ? 'var(--orange)' : 'var(--danger)';
+  el('mc-median').textContent = fmt(finals[Math.floor(finals.length/2)]);
+  el('mc-worst').textContent = fmt(finals[Math.floor(finals.length*0.1)]);
+  upsert('mc', 'chart-mc', {
+    type:'line',
+    data:{ labels: res.bands.map(b => b.year), datasets:[
+      { label:'90th percentile', data:res.bands.map(b=>band(b,'p90')), borderColor:'rgba(34,197,94,.6)', pointRadius:0, tension:.1 },
+      { label:'75th', data:res.bands.map(b=>band(b,'p75')), borderColor:'rgba(56,189,248,.5)', pointRadius:0, tension:.1 },
+      { label:'Median', data:res.bands.map(b=>band(b,'p50')), borderColor:'#38bdf8', borderWidth:3, pointRadius:0, tension:.1 },
+      { label:'25th', data:res.bands.map(b=>band(b,'p25')), borderColor:'rgba(249,115,22,.6)', pointRadius:0, tension:.1 },
+      { label:'10th percentile', data:res.bands.map(b=>band(b,'p10')), borderColor:'rgba(239,68,68,.7)', pointRadius:0, tension:.1 }
+    ]},
+    options: baseOpts()
+  });
+}
+
 function runMonteCarlo() {
   const runs = +el('mc-runs').value;
   config.assumptions.mcVolatility = +el('mc-vol').value;
@@ -509,22 +542,8 @@ function runMonteCarlo() {
     p => { el('mc-bar').style.width = (p*100).toFixed(0) + '%'; },
     res => {
       el('mc-status').textContent = runs + ' runs complete';
-      el('mc-success').textContent = (res.successRate*100).toFixed(1) + '%';
-      el('mc-success').style.color = res.successRate >= .85 ? 'var(--green)' : res.successRate >= .7 ? 'var(--orange)' : 'var(--danger)';
-      const finals = res.results.map(r => r.finalNetWorth).sort((a,b)=>a-b);
-      el('mc-median').textContent = fmt(finals[Math.floor(finals.length/2)]);
-      el('mc-worst').textContent = fmt(finals[Math.floor(finals.length*0.1)]);
-      upsert('mc', 'chart-mc', {
-        type:'line',
-        data:{ labels: res.bands.map(b => b.year), datasets:[
-          { label:'90th percentile', data:res.bands.map(b=>b.p90), borderColor:'rgba(34,197,94,.6)', pointRadius:0, tension:.1 },
-          { label:'75th', data:res.bands.map(b=>b.p75), borderColor:'rgba(56,189,248,.5)', pointRadius:0, tension:.1 },
-          { label:'Median', data:res.bands.map(b=>b.p50), borderColor:'#38bdf8', borderWidth:3, pointRadius:0, tension:.1 },
-          { label:'25th', data:res.bands.map(b=>b.p25), borderColor:'rgba(249,115,22,.6)', pointRadius:0, tension:.1 },
-          { label:'10th percentile', data:res.bands.map(b=>b.p10), borderColor:'rgba(239,68,68,.7)', pointRadius:0, tension:.1 }
-        ]},
-        options: baseOpts()
-      });
+      lastMonteCarlo = res;
+      renderMonteCarlo(res);
       AppStorage.fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(config)});
     });
 }
