@@ -5,3 +5,6 @@ npm-debug.log*
 # Application data & user configs
 data/
 dist/
+
+# Local AI session briefing; intentionally never committed.
+AI_CONTEXT.md
