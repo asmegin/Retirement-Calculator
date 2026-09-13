@@ -1,5 +1,10 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const E=require('../public/engine'),optimize=require('../public/plan-optimizer');
+test('combined optimizer upgrades unsafe RRSP marginal-rate floors',()=>{
+ const c=E.defaultConfig();c.assumptions.rrspMinMarginalRate=0;c.assumptions.targetDeathAge=66;
+ const r=optimize(c,{startYear:2026,maxEvaluations:0});
+ assert.equal(r.config.assumptions.rrspMinMarginalRate,30);
+});
 test('combined spending search preserves inputs, budgets and started benefits and reproduces capacity',()=>{
  const c=E.defaultConfig();c.assumptions.householdType='single';c.assumptions.targetDeathAge=68;c.assumptions.desiredMonthlyIncome=1000;
  c.incomes.forEach(p=>Object.assign(p,{birthYear:1961,targetRetireAge:65,cppStartAge:60,cppBaseAt65:600,oasBaseAt65:600}));

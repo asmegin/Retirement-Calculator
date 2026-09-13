@@ -205,7 +205,11 @@
       hooppIndexRate: num(a.hooppIndexRate, da.hooppIndexRate),
       hooppIndexBeforeStart: a.hooppIndexBeforeStart === true,
       optimizeContributions: a.optimizeContributions !== false,
-      rrspMinMarginalRate: num(a.rrspMinMarginalRate, num(a.assumedWithdrawalRate, da.rrspMinMarginalRate)),
+      /* Automatic RRSP targets are intended to harvest worthwhile upper-rate
+         deductions.  Older plans could contain 0 ("always RRSP"), which let
+         solve-to-target consume nearly all taxable income and accumulated
+         room even after the useful brackets were exhausted. */
+      rrspMinMarginalRate: clamp(num(a.rrspMinMarginalRate, num(a.assumedWithdrawalRate, da.rrspMinMarginalRate)), 30, 99),
       contributionSlice: Math.max(100, num(a.contributionSlice, da.contributionSlice)),
       reinvestRefund: a.reinvestRefund !== false,
       spendingMode: a.spendingMode === 'categories' ? 'categories' : 'target',
@@ -635,7 +639,7 @@
     var vol = num(A.mcVolatility, 12) / 100;
     var firstRetireYear = Math.min(retireYear[0], retireYear[1]);
     var slice = A.contributionSlice;
-    var rrspFloor = num(A.rrspMinMarginalRate, 35) / 100;
+    var rrspFloor = clamp(num(A.rrspMinMarginalRate, 35), 30, 99) / 100;
 
     var accts = cfg.accounts.filter(function (a) { return !single || a.owner !== cfg.incomes[1].name; }).map(function (a, idx) {
       return {

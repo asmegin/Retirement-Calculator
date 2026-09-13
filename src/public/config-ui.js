@@ -126,7 +126,7 @@ const assumptionFields = [
   {key:'rentalOwnerSplit', label:'Rental income taxed to person 1 (%)', type:'number'},
   {key:'targetDeathAge', label:'Plan to age', type:'number'},
   {key:'withdrawalStrategy', label:'Withdrawal order', type:'select', options:['tfsa-first','rrsp-first','taxable-first','min-tax','oas-smart']},
-  {key:'rrspMinMarginalRate', label:'RRSP floor marginal rate %', type:'number', step:'1', hint:'The optimizer contributes to an RRSP only while that person\'s marginal rate is at or above this. Below it, TFSA wins.'},
+  {key:'rrspMinMarginalRate', label:'RRSP floor marginal rate %', type:'number', min:'30', max:'99', step:'1', hint:'The optimizer contributes to an RRSP only while that person\'s marginal rate is at or above this. The minimum is 30%; below the selected rate, TFSA wins.'},
   {key:'returnMode', label:'Market assumption', type:'select', options:['deterministic','conservative','bad-decade']},
   {key:'conservativeDelta', label:'Conservative haircut %', type:'number', step:'0.1'},
   {key:'badDecadeDelta', label:'Bad-decade haircut %', type:'number', step:'0.1'},
@@ -287,7 +287,7 @@ function field(f, value, onchange) {
   } else {
     const inp = document.createElement('input');
     inp.id = fieldId;
-    inp.type = f.type; if (f.step) inp.step = f.step;
+    inp.type = f.type; if (f.step) inp.step = f.step;if(f.min!=null)inp.min=f.min;if(f.max!=null)inp.max=f.max;
     inp.value = (value === undefined || value === null) ? '' : value;
     inp.onchange = e => onchange(f.type === 'number' ? (e.target.value === '' ? '' : parseFloat(e.target.value)) : e.target.value);
     g.appendChild(inp);
