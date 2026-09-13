@@ -137,12 +137,32 @@ try:
             assert page.get_by_role('button',name='Optimize my plan',exact=True).is_visible()
             assert page.get_by_text('Compare account withdrawal orders',exact=True).is_visible()
             page.evaluate('async()=>{const c=structuredClone(PlanState.get());c.incomes.forEach(p=>{p.birthYear=new Date().getFullYear()-65;p.targetRetireAge=65;});c.assumptions.targetDeathAge=65;c.realEstate=[];await AppStorage.save(c);}')
+            page.evaluate('()=>{const create=AppWorkers.create;AppWorkers.create=function(kind){const w=create(kind);w.addEventListener("message",({data})=>{if(data.result)window.optimizerResult=data.result;});return w;};}')
             page.locator('#run-master').click()
             page.wait_for_selector('#action-results:not([hidden])',timeout=60000)
             assert page.locator('#action-result-title').inner_text()=='Your plan for more monthly spending'
             assert not page.locator('#withdrawal-options').evaluate('(el)=>el.open')
             assert page.locator('#action-metrics > div').count()==1
             assert page.locator('#master-sell-rentals').is_visible()
+            capacity=page.evaluate('optimizerResult.monthlySpend')
+            page.locator('#apply-action').click()
+            page.wait_for_function('document.getElementById("action-status").textContent.startsWith("Changes applied")')
+            page.goto(base+'/index.html');page.wait_for_function('window.PlanState && PlanState.get()')
+            assert float(page.locator('#m-goal').input_value())==capacity
+            page.reload();page.wait_for_function('window.PlanState && PlanState.get()')
+            assert float(page.locator('#m-goal').input_value())==capacity
+            page.goto(base+'/action-plan.html');page.wait_for_selector('#run-master:enabled')
+            page.evaluate('async()=>{const c=structuredClone(PlanState.get());c.incomes.forEach((p,k)=>{p.birthYear=new Date().getFullYear()-65+k;p.targetRetireAge=65;});c.assumptions.targetDeathAge=65;await AppStorage.save(c);}')
+            page.locator('#master-goal').select_option('retirement-spending');page.locator('#run-master').click()
+            page.wait_for_selector('#retirement-spending-options:not([hidden])',timeout=60000)
+            assert page.locator('#retirement-spending-options tbody tr').count()==4
+            page.locator('#retirement-spending-options button').first.click()
+            page.locator('#apply-action').click()
+            page.wait_for_function('document.getElementById("action-status").textContent.startsWith("Changes applied")')
+            selected=page.evaluate('PlanState.get()')
+            assert [p['targetRetireAge'] for p in selected['incomes']]==[65,64]
+            page.goto(base+'/index.html');page.wait_for_function('window.PlanState && PlanState.get()')
+            assert float(page.locator('#m-goal').input_value())==selected['assumptions']['desiredMonthlyIncome']
             assert 'never leaves your device' in page.locator('#privacy-notice').inner_text()
             assert not errors,errors
             context.close();print('PASS:',mode,'wizard/skip, privacy persistence, plain/encrypted exports, wrong-password recovery, demo isolation and mobile metadata.')

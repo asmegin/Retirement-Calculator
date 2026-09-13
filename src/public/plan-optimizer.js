@@ -2,12 +2,37 @@
   'use strict';
   const E=typeof module==='object'?require('./engine'):root.RetireEngine;
   const copy=v=>JSON.parse(JSON.stringify(v));
+  function retirementSpending(config,options){
+    const original=E.normalizeConfig(config),start=options.startYear||new Date().getFullYear();
+    const people=original.incomes.slice(0,original.assumptions.householdType==='single'?1:2);
+    const deathAge=original.assumptions.estate.enabled?(people[0].deathAge??original.assumptions.targetDeathAge):original.assumptions.targetDeathAge;
+    const ages=[];for(let age=50;age<=deathAge;age+=5)ages.push(age);
+    if(deathAge>=50&&!ages.includes(deathAge))ages.push(deathAge);
+    const rows=[];
+    ages.forEach((age,index)=>{
+      const year=people[0].birthYear+age,pair=people.map(p=>year-p.birthYear);
+      const row={year,ages:pair,label:people.map((p,k)=>p.name+' '+pair[k]).join(' / ')};
+      if(year<start)row.unavailable='This retirement year is in the past.';
+      else if(pair.some(a=>a<18))row.unavailable='A household member would be under 18.';
+      else if(pair.some(a=>a>120))row.unavailable='Outside the supported retirement-age range.';
+      else if(original.assumptions.estate.enabled&&people.some((p,k)=>pair[k]>(p.deathAge??original.assumptions.targetDeathAge)))row.unavailable='After a household member’s planning lifespan.';
+      else{
+        const candidate=copy(original);delete candidate.assumptions.withdrawalPlan;
+        people.forEach((p,k)=>candidate.incomes[k].targetRetireAge=pair[k]);
+        const result=optimize(candidate,{...options,objective:'spending',onProgress:progress=>options.onProgress?.({...progress,phase:row.label+' — '+progress.phase,option:index+1,options:ages.length})});
+        Object.assign(row,{config:result.config,monthlySpend:result.monthlySpend,result:result.result,evaluated:result.evaluated});
+      }
+      rows.push(row);options.onProgress?.({phase:'Retirement options',evaluated:index+1,maxEvaluations:ages.length});
+    });
+    return {objective:'retirement-spending',rows};
+  }
   function optimize(config,options={}){
     const original=E.normalizeConfig(config),start=options.startYear||new Date().getFullYear();
     const objective=options.objective||'spending';
+    if(objective==='retirement-spending')return retirementSpending(config,options);
     if(!['spending','estate','tax'].includes(objective))throw new Error('Choose a supported optimization goal.');
     const funded=r=>r.years.length>0&&r.years.every(y=>y.unfunded<=1);
-    const baseline=E.simulate(original,{startYear:start}),cap=options.maxEvaluations||(180+(options.sellRentals?original.realEstate.filter(p=>p.type==='rental').length*30:0));
+    const baseline=E.simulate(original,{startYear:start}),cap=options.maxEvaluations??(180+(options.sellRentals?original.realEstate.filter(p=>p.type==='rental').length*30:0));
     let evaluated=0,phase='Current plan';const seen=new Map(),candidates=[];
     function evaluate(c,precise=false){
       const r=E.simulate(c,{startYear:start});
@@ -64,7 +89,17 @@
     const schedule=E.optimizeWithdrawals(best.config,{startYear:start,objective:objective==='tax'?'tax':'estate',maxEvaluations:80});
     const scheduled=copy(best.config);scheduled.assumptions.withdrawalStrategy=schedule.withdrawalStrategy;scheduled.assumptions.withdrawalPlan=schedule.withdrawalPlan;
     const verified=evaluate(scheduled,true);if(verified.score>best.score)best=verified;
-    return {objective,config:best.config,baseline,result:best.result,monthlySpend:best.monthlySpend,baselineSpend:initial.monthlySpend,evaluated,improved:best.score>initial.score,globalOptimum:false,sellRentals:!!options.sellRentals};
+    const applied=copy(best.config);
+    if(objective==='spending'){
+      if(applied.assumptions.spendingMode==='categories'){
+        const monthly=E.Planning.spendingBaseline(applied.assumptions.spendingCategories)/12;
+        if(monthly<=0)throw new Error('Add a positive spending category before optimizing monthly spending.');
+        applied.assumptions.spendingCategories.forEach(item=>item.amount*=best.monthlySpend/monthly);
+      }
+      applied.assumptions.desiredMonthlyIncome=best.monthlySpend;
+    }
+    const appliedResult=E.simulate(applied,{startYear:start});
+    return {objective,config:applied,baseline,result:appliedResult,monthlySpend:best.monthlySpend,baselineSpend:initial.monthlySpend,evaluated,improved:best.score>initial.score,globalOptimum:false,sellRentals:!!options.sellRentals};
   }
   if(typeof module==='object')module.exports=optimize;else root.optimizeRetirementPlan=optimize;
 })(typeof self==='undefined'?globalThis:self);
